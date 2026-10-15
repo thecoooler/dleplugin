@@ -1,6 +1,6 @@
 {"config":{"allow-plugins":{"pestphp/pest-plugin":true}},
     "require": {
-        "pestphp/pest": "^4.0",
+        "pestphp/pest": "^5.3",
         "mockery/mockery": "^1.6.12"
     }
 }
