@@ -161,7 +161,7 @@ func pestArgs(o Options) []string {
 		// default /dle scope would silently exclude the actual source files.
 		args = append(args, "-d", "pcov.enabled=1", "-d", "pcov.directory="+filepath.Join(o.Plugin.Root(), "src"))
 	}
-	args = append(args, pestBin, "--display-incomplete", "--testdox", "--colors=always", "--profile")
+	args = append(args, pestBin, "--display-incomplete", "--colors=always", "--profile")
 	if o.Filter != "" {
 		args = append(args, "--filter", o.Filter)
 	}

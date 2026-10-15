@@ -347,13 +347,13 @@ func TestPestArgs(t *testing.T) {
 	min := 80.5
 	p := loadPlugin(t, filepath.Join(t.TempDir(), "plugin with spaces"), "demo")
 	got := pestArgs(Options{Plugin: p, Filter: "it works", Coverage: true, CoverageMin: &min, CoverageHTML: "/out", UpdateSnapshots: true, Files: []string{"tests/A.php"}})
-	want := []string{"php", "-d", "pcov.enabled=1", "-d", "pcov.directory=" + filepath.Join(p.Root(), "src"), pestBin, "--display-incomplete", "--testdox", "--colors=always", "--profile",
+	want := []string{"php", "-d", "pcov.enabled=1", "-d", "pcov.directory=" + filepath.Join(p.Root(), "src"), pestBin, "--display-incomplete", "--colors=always", "--profile",
 		"--filter", "it works", "--coverage", "--min=80.5", "--coverage-html=/out", "-c", "phpunit.xml", "--update-snapshots", "tests/A.php"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("args = %q", got)
 	}
 	got = pestArgs(Options{})
-	want = []string{"php", pestBin, "--display-incomplete", "--testdox", "--colors=always", "--profile", "-c", "phpunit.xml"}
+	want = []string{"php", pestBin, "--display-incomplete", "--colors=always", "--profile", "-c", "phpunit.xml"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("args = %q", got)
 	}
