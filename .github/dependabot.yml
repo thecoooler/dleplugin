@@ -1,0 +1,30 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      all:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      all:
+        update-types: [minor, patch]
+  - package-ecosystem: composer
+    directory: /internal/modules/static/internal/static/assets
+    schedule:
+      interval: weekly
+    groups:
+      all:
+        update-types: [minor, patch]
+  - package-ecosystem: composer
+    directory: /internal/modules/test/internal/dletest/assets
+    schedule:
+      interval: weekly
+    groups:
+      all:
+        update-types: [minor, patch]

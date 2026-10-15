@@ -1,0 +1,49 @@
+slug: Basic
+name: Basic Plugin
+description: Basic description
+mount: engine/Acme/Basic
+alias:
+  engine/inc/basic.php: engine/inc/basic.php
+files:
+  engine/init.php:
+    - after:
+        search: |
+          a-search
+        replace: |
+          after a
+
+    - after:
+        search: |
+          b-search
+        replace: |
+          after b
+
+  engine/modules/main.php:
+    - before:
+        search: |
+          $tpl->set ( '{AJAX}', $ajax );
+        replace: |
+          require_once 'x.php';
+
+    - replace:
+        search: |
+          old code
+        replace: |
+          new code
+            indented
+
+          last
+
+mysql:
+  install: |
+    CREATE TABLE `{prefix}_x` (
+      id int
+    );
+
+  enable: |
+    INSERT INTO a VALUES (1);
+
+    INSERT INTO b VALUES (2);
+
+  delete: |
+    DROP TABLE x;

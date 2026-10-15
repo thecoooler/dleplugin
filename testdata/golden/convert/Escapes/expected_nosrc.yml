@@ -1,0 +1,18 @@
+slug: Escapes
+name: Esc & <Co>
+description: Юникод
+mount: engine/Escapes
+files:
+  a&b.php:
+    - before:
+        search: |
+          plain & text
+        replace: |
+          line1
+          line2
+
+            tail  
+
+mysql:
+  install: |2
+      leading space

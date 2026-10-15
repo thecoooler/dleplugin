@@ -1,0 +1,6 @@
+[
+  {
+    "src": "src/x.php",
+    "mount": "engine/Acme/Quirks/x.php"
+  }
+]

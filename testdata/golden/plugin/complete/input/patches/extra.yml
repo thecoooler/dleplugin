@@ -1,0 +1,12 @@
+slug: ignored
+files:
+  engine/modules/main.php:
+    - before:
+        search: |
+          echo $tpl->result['main'];
+        replace: |
+          require \DLEPlugins::Check(ENGINE_DIR . "/Acme/Example/main.php");
+  engine/new_from_extra.php:
+    - after:
+        search: "a"
+        replace: "b"

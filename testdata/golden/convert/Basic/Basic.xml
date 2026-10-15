@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dleplugin>
+  <name>Basic Plugin</name>
+  <description>Basic description</description>
+  <icon></icon>
+  <version>1.0</version>
+  <mysqlinstall><![CDATA[CREATE TABLE `{prefix}_x` (
+  id int
+);]]></mysqlinstall>
+  <mysqlupgrade><![CDATA[]]></mysqlupgrade>
+  <mysqlenable><![CDATA[INSERT INTO a VALUES (1);
+
+INSERT INTO b VALUES (2);]]></mysqlenable>
+  <mysqldisable></mysqldisable>
+  <mysqldelete><![CDATA[DROP TABLE x;]]></mysqldelete>
+  <phpinstall><![CDATA[echo 1;]]></phpinstall>
+  <file name="engine/modules/main.php">
+    <operation action="replace">
+      <searchcode><![CDATA[old code]]></searchcode>
+      <replacecode><![CDATA[new code
+  indented
+
+last]]></replacecode>
+      <enabled>1</enabled>
+    </operation>
+    <operation action="before">
+      <searchcode><![CDATA[$tpl->set ( '{AJAX}', $ajax );]]></searchcode>
+      <replacecode><![CDATA[require_once 'x.php';]]></replacecode>
+      <enabled>1</enabled>
+    </operation>
+  </file>
+  <file name="engine/init.php">
+    <operation action="after">
+      <searchcode><![CDATA[b-search]]></searchcode>
+      <replacecode><![CDATA[after b]]></replacecode>
+    </operation>
+    <operation action="after">
+      <searchcode><![CDATA[a-search]]></searchcode>
+      <replacecode><![CDATA[after a]]></replacecode>
+    </operation>
+  </file>
+  <file name="engine/Acme/Basic/Main.php">
+    <operation action="create">
+      <replacecode><![CDATA[<?php
+class Main {}
+]]></replacecode>
+    </operation>
+  </file>
+  <file name="engine/inc/basic.php">
+    <operation action="create">
+      <replacecode><![CDATA[<?php echo "admin & co";]]></replacecode>
+    </operation>
+  </file>
+</dleplugin>

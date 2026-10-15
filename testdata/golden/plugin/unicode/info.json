@@ -1,0 +1,34 @@
+{
+  "files": {},
+  "slug": "Юни",
+  "name": "Юникод плагин",
+  "description": "Тест é",
+  "mount": "engine/Acme/Юни",
+  "namespace": "",
+  "build": {
+    "split": false
+  },
+  "extras": {
+    "admin_section": true,
+    "autoloader": [
+      false,
+      false
+    ],
+    "configs": []
+  },
+  "alias": {},
+  "mysql": {
+    "install": "",
+    "upgrade": "",
+    "enable": "INSERT IGNORE INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('юни', 'Юникод плагин', 'Тест é', '', 'all')",
+    "disable": "DELETE FROM `{prefix}_admin_sections` WHERE `name` = 'юни';",
+    "delete": "DELETE FROM `{prefix}_admin_sections` WHERE `name` = 'юни';"
+  },
+  "php": {
+    "install": "",
+    "upgrade": "",
+    "enable": "",
+    "disable": "",
+    "delete": ""
+  }
+}

@@ -1,0 +1,10 @@
+[
+  {
+    "src": "src/a.php",
+    "mount": "a.php"
+  },
+  {
+    "src": "src/sub/b.php",
+    "mount": "sub/b.php"
+  }
+]

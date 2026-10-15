@@ -1,0 +1,34 @@
+{
+  "action_missing_search": {
+    "manifest": "slug: X\nname: X\nfiles:\n  a.php:\n    - before:\n        replace: y\n",
+    "error": "dleplugin.yml validation error: files.a.php.0.before.search: Field required"
+  },
+  "empty_file": {
+    "manifest": "",
+    "error": "dleplugin.yml must contain a mapping at the root"
+  },
+  "hook_null": {
+    "manifest": "slug: X\nname: X\nmysql:\n  install:\n",
+    "error": "dleplugin.yml validation error: mysql.install: Input should be a valid string"
+  },
+  "missing_extra_config": {
+    "manifest": "slug: X\nname: X\nextras:\n  configs: [nope]\n",
+    "error": "Config file nope was not found: open <dir>/nope.yml: no such file or directory"
+  },
+  "missing_name": {
+    "manifest": "slug: X\n",
+    "error": "dleplugin.yml validation error: name: Field required"
+  },
+  "missing_slug": {
+    "manifest": "name: X\n",
+    "error": "dleplugin.yml validation error: slug: Field required"
+  },
+  "not_mapping": {
+    "manifest": "- a\n- b\n",
+    "error": "dleplugin.yml must contain a mapping at the root"
+  },
+  "syntax_error": {
+    "manifest": "slug: [\n",
+    "error": "dleplugin.yml syntax error: yaml: line 1: did not find expected node content"
+  }
+}

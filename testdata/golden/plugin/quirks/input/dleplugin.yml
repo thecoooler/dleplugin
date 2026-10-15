@@ -1,0 +1,10 @@
+slug: Quirks
+name: "Quirks & <Co> \"q\""
+description: "Описание 'single'"
+mount: ./engine/./Acme//Quirks
+files: []
+mysql: "not a mapping"
+php: null
+extras:
+  autoloader: true
+  admin_section: false

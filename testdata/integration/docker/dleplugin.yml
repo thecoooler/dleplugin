@@ -1,0 +1,13 @@
+slug: integrationsmoke
+name: Integration Smoke
+description: Real Docker integration smoke test
+mount: engine/Acme/integrationsmoke
+extras:
+  autoloader: true
+files:
+  engine/modules/functions.php:
+    - after:
+        search: '<?php'
+        replace: 'function dleplugin_integration_marker(): string { return "patched"; }'
+mysql:
+  install: 'CREATE TABLE {prefix}_integration_smoke (id INT PRIMARY KEY, value VARCHAR(64)); INSERT INTO {prefix}_integration_smoke VALUES (1, "installed");'

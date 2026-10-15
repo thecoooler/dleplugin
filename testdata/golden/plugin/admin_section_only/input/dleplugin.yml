@@ -1,0 +1,7 @@
+slug: Demo
+name: Demo Plugin
+description: Demo description
+mount: engine/Acme/Demo
+extras:
+  admin_section: true
+  autoloader: [false, true]

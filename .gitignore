@@ -1,0 +1,18 @@
+bin/
+/dist/
+.DS_Store
+*.out
+coverage.*
+cover.out
+
+# Local credentials and deployment targets
+.env
+.env.*
+!.env.example
+dleplugin-deploy.yaml
+.venv/
+
+# Local-only tooling
+/scripts/integration_deploy.py
+/scripts/test_integration_deploy.py
+/docs/deploy-integration.md

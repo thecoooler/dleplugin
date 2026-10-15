@@ -1,0 +1,5 @@
+slug: ExamplePlugin
+name: ExamplePlugin
+description: Example plugin
+mount: engine/Acme/ExamplePlugin
+files: {}

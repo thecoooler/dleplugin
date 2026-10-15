@@ -1,0 +1,27 @@
+files: {}
+slug: Demo
+name: Demo Plugin
+description: 'Демо описание: ''x'''
+namespace: Acme\Demo
+mount: engine/Acme/Demo
+build:
+  split: false
+extras:
+  admin_section: false
+  autoloader:
+  - false
+  - false
+  configs: []
+alias: {}
+mysql:
+  install: ''
+  upgrade: ''
+  enable: ''
+  disable: ''
+  delete: ''
+php:
+  install: ''
+  upgrade: ''
+  enable: ''
+  disable: ''
+  delete: ''

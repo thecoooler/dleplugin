@@ -1,0 +1,26 @@
+[
+  {
+    "src": "src/.htaccess",
+    "mount": "engine/Acme/ExamplePlugin/.htaccess"
+  },
+  {
+    "src": "src/Admin/ConfigController.php",
+    "mount": "engine/Acme/ExamplePlugin/Admin/ConfigController.php"
+  },
+  {
+    "src": "src/admin.php",
+    "mount": "engine/inc/example.php"
+  },
+  {
+    "src": "src/ajax.php",
+    "mount": "engine/ajax/example.php"
+  },
+  {
+    "src": "src/assets/style.css",
+    "mount": "engine/Acme/ExamplePlugin/assets/style.css"
+  },
+  {
+    "src": "src/crlf.php",
+    "mount": "engine/Acme/ExamplePlugin/crlf.php"
+  }
+]

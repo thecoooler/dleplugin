@@ -1,0 +1,34 @@
+{
+  "files": {},
+  "slug": "Bare",
+  "name": "Bare",
+  "description": "",
+  "mount": "",
+  "namespace": "Bare",
+  "build": {
+    "split": false
+  },
+  "extras": {
+    "admin_section": false,
+    "autoloader": [
+      false,
+      false
+    ],
+    "configs": []
+  },
+  "alias": {},
+  "mysql": {
+    "install": "",
+    "upgrade": "",
+    "enable": "",
+    "disable": "",
+    "delete": ""
+  },
+  "php": {
+    "install": "",
+    "upgrade": "",
+    "enable": "",
+    "disable": "",
+    "delete": ""
+  }
+}

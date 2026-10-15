@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><dleplugin><name>QF</name><description></description><icon></icon><version></version><upgradeurl></upgradeurl><filedelete>0</filedelete><needplugin></needplugin><mnotice>0</mnotice><mysqlinstall><![CDATA[]]></mysqlinstall><mysqlupgrade><![CDATA[]]></mysqlupgrade><mysqlenable><![CDATA[SELECT 1;]]></mysqlenable><mysqldisable><![CDATA[SELECT 2;]]></mysqldisable><mysqldelete><![CDATA[SELECT 3;]]></mysqldelete><phpinstall><![CDATA[]]></phpinstall><phpupgrade><![CDATA[]]></phpupgrade><phpenable><![CDATA[]]></phpenable><phpdisable><![CDATA[]]></phpdisable><phpdelete><![CDATA[]]></phpdelete><notice><![CDATA[]]></notice><file name="engine/a&amp;b&quot;&lt;c&gt;.php"><operation action="before"><searchcode><![CDATA[	TAB	]]></searchcode><replacecode><![CDATA[line1
+line2]]></replacecode><enabled>1</enabled></operation></file><file name="engine/a&amp;b&quot;&lt;c&gt;.php"><operation action="create"><replacecode><![CDATA[created body]]></replacecode><enabled>1</enabled></operation></file><file name="engine/inc/include/functions.inc.php"><operation action="before"><searchcode><![CDATA[function dle_session( $sid = false ) {]]></searchcode><replacecode><![CDATA[spl_autoload_register(function ($name) {
+    if (strpos($name, 'QF\\') !== 0) return;
+    $file = str_replace("\\", "/", $name);
+    @require_once \DLEPlugins::Check(ENGINE_DIR . '/' . $file . '.php');
+});
+            ]]></replacecode><enabled>1</enabled></operation></file></dleplugin>

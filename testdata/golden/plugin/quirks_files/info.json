@@ -1,0 +1,60 @@
+{
+  "files": {
+    "engine/a\u0026b\"\u003cc\u003e.php": {
+      "name": "engine/a\u0026b\"\u003cc\u003e.php",
+      "actions": [
+        {
+          "name": "before",
+          "search": "\tTAB\t",
+          "replace": "line1\nline2"
+        },
+        {
+          "name": "create",
+          "search": "",
+          "replace": "created body"
+        }
+      ]
+    },
+    "engine/inc/include/functions.inc.php": {
+      "name": "engine/inc/include/functions.inc.php",
+      "actions": [
+        {
+          "name": "before",
+          "search": "function dle_session( $sid = false ) {",
+          "replace": "spl_autoload_register(function ($name) {\n    if (strpos($name, 'QF\\\\') !== 0) return;\n    $file = str_replace(\"\\\\\", \"/\", $name);\n    @require_once \\DLEPlugins::Check(ENGINE_DIR . '/' . $file . '.php');\n});\n            "
+        }
+      ]
+    }
+  },
+  "slug": "QF",
+  "name": "QF",
+  "description": "",
+  "mount": "",
+  "namespace": "QF",
+  "build": {
+    "split": true
+  },
+  "extras": {
+    "admin_section": false,
+    "autoloader": [
+      true,
+      false
+    ],
+    "configs": []
+  },
+  "alias": {},
+  "mysql": {
+    "install": "",
+    "upgrade": "",
+    "enable": "SELECT 1;",
+    "disable": "SELECT 2;",
+    "delete": "SELECT 3;"
+  },
+  "php": {
+    "install": "",
+    "upgrade": "",
+    "enable": "",
+    "disable": "",
+    "delete": ""
+  }
+}

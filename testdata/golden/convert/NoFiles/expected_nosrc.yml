@@ -1,0 +1,7 @@
+slug: NoFiles
+name: Demo
+description: Demo plugin
+mount: engine/NoFiles
+files:
+  []
+mysql:

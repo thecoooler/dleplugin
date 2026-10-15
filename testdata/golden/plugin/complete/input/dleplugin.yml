@@ -1,0 +1,51 @@
+slug: ExamplePlugin
+name: ExamplePlugin
+description: Example DLE plugin
+mount: engine/Acme/ExamplePlugin/
+
+build:
+  split: false
+
+extras:
+  admin_section: true
+  autoloader: [true, false]
+  configs:
+    - patches/extra
+    - patches/second
+
+alias:
+  admin.php: engine/inc/example.php
+  ./ajax.php: engine//ajax/example.php
+
+files:
+  engine/init.php:
+    - after:
+        search: |
+          require_once (DLEPlugins::Check(ENGINE_DIR . '/modules/functions.php'));
+        replace: |
+          define("EXAMPLE_PLUGIN", true);
+
+  engine/modules/main.php:
+    - before:
+        search: |
+          $tpl->set ( '{AJAX}', $ajax );
+        replace: |
+          require_once \DLEPlugins::Check(ENGINE_DIR . "/Acme/ExamplePlugin/js.php");
+    - replace:
+        search: "\r\n\nold & <code> \"x\"\n\n"
+        replace: "\nnew ]] > code\n"
+  engine/inc/created.php:
+    - create: |
+        <?php
+        echo "Created";
+
+mysql:
+  install: |
+    CREATE TABLE `{prefix}_example_items` (
+      `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY
+    );
+  upgrade: "\n\nALTER TABLE x;\n\n"
+
+php:
+  enable: |
+    clear_cache();

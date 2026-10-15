@@ -1,0 +1,16 @@
+slug: QF
+name: QF
+build:
+  split: true
+extras:
+  autoloader: ["false", 0, true]
+files:
+  'engine/a&b"<c>.php':
+    - before:
+        search: "\tTAB\t"
+        replace: "line1\nline2\r\n"
+    - create: "\n\ncreated body\n\n"
+mysql:
+  enable: SELECT 1;
+  disable: SELECT 2;
+  delete: SELECT 3;

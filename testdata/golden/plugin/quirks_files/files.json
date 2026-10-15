@@ -1,0 +1,10 @@
+[
+  {
+    "src": "src/.htaccess",
+    "mount": ".htaccess"
+  },
+  {
+    "src": "src/inc/f.php",
+    "mount": "inc/f.php"
+  }
+]

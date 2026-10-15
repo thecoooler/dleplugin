@@ -1,0 +1,2 @@
+# Golden fixtures must stay byte-exact (CRLF included).
+testdata/** -text

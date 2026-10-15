@@ -1,0 +1,55 @@
+{
+  "files": {
+    "engine/inc/include/functions.inc.php": {
+      "name": "engine/inc/include/functions.inc.php",
+      "actions": [
+        {
+          "name": "before",
+          "search": "function dle_session( $sid = false ) {",
+          "replace": "spl_autoload_register(function ($name) {\n    if (strpos($name, 'Acme\\\\Quirks\\\\') !== 0) return;\n    $file = str_replace(\"\\\\\", \"/\", $name);\n    @require_once \\DLEPlugins::Check(ENGINE_DIR . '/' . $file . '.php');\n});\n            "
+        }
+      ]
+    },
+    "engine/modules/functions.php": {
+      "name": "engine/modules/functions.php",
+      "actions": [
+        {
+          "name": "before",
+          "search": "function dle_session( $sid = false ) {",
+          "replace": "spl_autoload_register(function ($name) {\n    if (strpos($name, 'Acme\\\\Quirks\\\\') !== 0) return;\n    $file = str_replace(\"\\\\\", \"/\", $name);\n    @require_once \\DLEPlugins::Check(ENGINE_DIR . '/' . $file . '.php');\n});\n            "
+        }
+      ]
+    }
+  },
+  "slug": "Quirks",
+  "name": "Quirks \u0026 \u003cCo\u003e \"q\"",
+  "description": "Описание 'single'",
+  "mount": "engine/Acme/Quirks",
+  "namespace": "Acme\\Quirks",
+  "build": {
+    "split": false
+  },
+  "extras": {
+    "admin_section": false,
+    "autoloader": [
+      true,
+      true
+    ],
+    "configs": []
+  },
+  "alias": {},
+  "mysql": {
+    "install": "",
+    "upgrade": "",
+    "enable": "",
+    "disable": "",
+    "delete": ""
+  },
+  "php": {
+    "install": "",
+    "upgrade": "",
+    "enable": "",
+    "disable": "",
+    "delete": ""
+  }
+}

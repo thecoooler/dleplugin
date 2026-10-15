@@ -1,0 +1,5 @@
+files:
+  engine/init.php:
+    - before:
+        search: x
+        replace: y

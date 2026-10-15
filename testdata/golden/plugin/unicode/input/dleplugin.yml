@@ -1,0 +1,6 @@
+slug: Юни
+name: Юникод плагин
+description: "Тест \u00e9"
+mount: engine/Acme/Юни
+extras:
+  admin_section: true

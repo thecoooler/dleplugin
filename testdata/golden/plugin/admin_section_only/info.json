@@ -1,0 +1,45 @@
+{
+  "files": {
+    "engine/modules/functions.php": {
+      "name": "engine/modules/functions.php",
+      "actions": [
+        {
+          "name": "before",
+          "search": "function dle_session( $sid = false ) {",
+          "replace": "spl_autoload_register(function ($name) {\n    if (strpos($name, 'Acme\\\\Demo\\\\') !== 0) return;\n    $file = str_replace(\"\\\\\", \"/\", $name);\n    @require_once \\DLEPlugins::Check(ENGINE_DIR . '/' . $file . '.php');\n});\n            "
+        }
+      ]
+    }
+  },
+  "slug": "Demo",
+  "name": "Demo Plugin",
+  "description": "Demo description",
+  "mount": "engine/Acme/Demo",
+  "namespace": "Acme\\Demo",
+  "build": {
+    "split": false
+  },
+  "extras": {
+    "admin_section": true,
+    "autoloader": [
+      false,
+      true
+    ],
+    "configs": []
+  },
+  "alias": {},
+  "mysql": {
+    "install": "",
+    "upgrade": "",
+    "enable": "INSERT IGNORE INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('demo', 'Demo Plugin', 'Demo description', '', 'all')",
+    "disable": "DELETE FROM `{prefix}_admin_sections` WHERE `name` = 'demo';",
+    "delete": "DELETE FROM `{prefix}_admin_sections` WHERE `name` = 'demo';"
+  },
+  "php": {
+    "install": "",
+    "upgrade": "",
+    "enable": "",
+    "disable": "",
+    "delete": ""
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "files": {
+    "engine/init.php": {
+      "name": "engine/init.php",
+      "actions": [
+        {
+          "name": "after",
+          "search": "require_once (DLEPlugins::Check(ENGINE_DIR . '/modules/functions.php'));",
+          "replace": "define(\"EXAMPLE_PLUGIN\", true);"
+        },
+        {
+          "name": "before",
+          "search": "x",
+          "replace": "y"
+        }
+      ]
+    },
+    "engine/modules/main.php": {
+      "name": "engine/modules/main.php",
+      "actions": [
+        {
+          "name": "before",
+          "search": "$tpl-\u003eset ( '{AJAX}', $ajax );",
+          "replace": "require_once \\DLEPlugins::Check(ENGINE_DIR . \"/Acme/ExamplePlugin/js.php\");"
+        },
+        {
+          "name": "replace",
+          "search": "old \u0026 \u003ccode\u003e \"x\"",
+          "replace": "new ]] \u003e code"
+        },
+        {
+          "name": "before",
+          "search": "echo $tpl-\u003eresult['main'];",
+          "replace": "require \\DLEPlugins::Check(ENGINE_DIR . \"/Acme/Example/main.php\");"
+        }
+      ]
+    },
+    "engine/inc/created.php": {
+      "name": "engine/inc/created.php",
+      "actions": [
+        {
+          "name": "create",
+          "search": "",
+          "replace": "\u003c?php\necho \"Created\";"
+        }
+      ]
+    },
+    "engine/new_from_extra.php": {
+      "name": "engine/new_from_extra.php",
+      "actions": [
+        {
+          "name": "after",
+          "search": "a",
+          "replace": "b"
+        }
+      ]
+    },
+    "engine/inc/include/functions.inc.php": {
+      "name": "engine/inc/include/functions.inc.php",
+      "actions": [
+        {
+          "name": "before",
+          "search": "function dle_session( $sid = false ) {",
+          "replace": "spl_autoload_register(function ($name) {\n    if (strpos($name, 'Acme\\\\ExamplePlugin\\\\') !== 0) return;\n    $file = str_replace(\"\\\\\", \"/\", $name);\n    @require_once \\DLEPlugins::Check(ENGINE_DIR . '/' . $file . '.php');\n});\n            "
+        }
+      ]
+    }
+  },
+  "slug": "ExamplePlugin",
+  "name": "ExamplePlugin",
+  "description": "Example DLE plugin",
+  "mount": "engine/Acme/ExamplePlugin",
+  "namespace": "Acme\\ExamplePlugin",
+  "build": {
+    "split": false
+  },
+  "extras": {
+    "admin_section": true,
+    "autoloader": [
+      true,
+      false
+    ],
+    "configs": [
+      "patches/extra",
+      "patches/second"
+    ]
+  },
+  "alias": {
+    "admin.php": "engine/inc/example.php",
+    "ajax.php": "engine/ajax/example.php"
+  },
+  "mysql": {
+    "install": "CREATE TABLE `{prefix}_example_items` (\n  `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY\n);",
+    "upgrade": "ALTER TABLE x;",
+    "enable": "INSERT IGNORE INTO `{prefix}_admin_sections` (`name`, `title`, `descr`, `icon`, `allow_groups`) VALUES ('exampleplugin', 'ExamplePlugin', 'Example DLE plugin', '', 'all')",
+    "disable": "DELETE FROM `{prefix}_admin_sections` WHERE `name` = 'exampleplugin';",
+    "delete": "DELETE FROM `{prefix}_admin_sections` WHERE `name` = 'exampleplugin';"
+  },
+  "php": {
+    "install": "",
+    "upgrade": "",
+    "enable": "clear_cache();",
+    "disable": "",
+    "delete": ""
+  }
+}

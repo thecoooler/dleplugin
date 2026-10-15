@@ -1,0 +1,6 @@
+[
+  {
+    "src": "src/файл.php",
+    "mount": "engine/Acme/Юни/файл.php"
+  }
+]
