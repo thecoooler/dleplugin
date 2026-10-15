@@ -209,17 +209,15 @@ func TestStaticFilesFromSubdirectory(t *testing.T) {
 
 func TestStaticConfigAndFlags(t *testing.T) {
 	e := newEnv(t)
-	composer := filepath.Join(e.home, "composer")
 	modules := filepath.Join(e.home, "modules")
-	write(t, filepath.Join(composer, "x.php"), "")
 	write(t, filepath.Join(modules, "Dep", "src", "y.php"), "")
 	write(t, filepath.Join(e.plugin, static.ConfFile), "dependencies: [Dep]\nstrict: true\n")
-	e.config(t, "static:\n  dle_composer_dir: "+composer+"\ndependency_roots: ["+modules+"]\n")
+	e.config(t, "dependency_roots: ["+modules+"]\n")
 	if code := e.run("static"); code != 0 {
 		t.Fatalf("exit %d: %s", code, e.errB)
 	}
 	run := e.dockerRuns(t)[0]
-	for _, s := range []string{composer + ":/include/0:ro", filepath.Join(modules, "Dep", "src") + ":/include/1:ro"} {
+	for _, s := range []string{filepath.Join(modules, "Dep", "src") + ":/include/0:ro"} {
 		if !strings.Contains(run, s) {
 			t.Errorf("run lacks %q: %s", s, run)
 		}
@@ -229,21 +227,19 @@ func TestStaticConfigAndFlags(t *testing.T) {
 		t.Fatalf("phpstan.neon: %v", matches)
 	}
 	neon, _ := os.ReadFile(matches[0])
-	for _, s := range []string{"- /include/0", "- /include/1", "phpstan-strict-rules/rules.neon"} {
+	for _, s := range []string{"- /include/0", "phpstan-strict-rules/rules.neon"} {
 		if !strings.Contains(string(neon), s) {
 			t.Errorf("neon lacks %q:\n%s", s, neon)
 		}
 	}
 
-	// flags override the config
-	e = newEnv(t)
+	// Flags override dependency roots from config.
 	other := filepath.Join(e.home, "other")
-	write(t, filepath.Join(other, "z.php"), "")
-	e.config(t, "static:\n  dle_composer_dir: /nonexistent\n")
-	if code := e.run("static", "--dle-composer-dir", other, "--dependency-root", "/r1", "--dependency-root", "/r2"); code != 0 {
+	write(t, filepath.Join(other, "Dep", "src", "z.php"), "")
+	if code := e.run("static", "--dependency-root", "/missing", "--dependency-root", other); code != 0 {
 		t.Fatalf("exit %d: %s", code, e.errB)
 	}
-	if run := e.dockerRuns(t)[0]; !strings.Contains(run, other+":/include/0:ro") {
+	if run := e.dockerRuns(t)[1]; !strings.Contains(run, filepath.Join(other, "Dep", "src")+":/include/0:ro") {
 		t.Errorf("run = %s", run)
 	}
 }

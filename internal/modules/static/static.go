@@ -45,7 +45,7 @@ func pluginRoot(rt *app.Runtime) (root, wd string, err error) {
 func staticCommand(rt *app.Runtime) *cobra.Command {
 	var (
 		toolVerbose, jsonOutput, countOnly bool
-		dleComposerDir, phpVersion         string
+		phpVersion                         string
 		dependencyRoots                    []string
 	)
 	cmd := &cobra.Command{
@@ -85,9 +85,6 @@ Exits with code 1 when there are findings or the analyser failed.`,
 			if len(args) > 0 {
 				files = plugin.NormalizeFiles(args, root, wd)
 			}
-			if cmd.Flags().Changed("dle-composer-dir") {
-				cfg.DLEComposerDir = dleComposerDir
-			}
 			if len(dependencyRoots) > 0 {
 				cfg.DependencyRoots = dependencyRoots
 			}
@@ -95,7 +92,6 @@ Exits with code 1 when there are findings or the analyser failed.`,
 				PluginDir:       root,
 				Files:           files,
 				InvocationDir:   wd,
-				DLEComposerDir:  cfg.DLEComposerDir,
 				Dependencies:    cfg.Dependencies,
 				DependencyRoots: cfg.DependencyRoots,
 				PHPVersion:      php,
@@ -126,7 +122,6 @@ Exits with code 1 when there are findings or the analyser failed.`,
 	f.BoolVarP(&toolVerbose, "tool-verbose", "t", false, "Verbose output from static analysis tools")
 	f.BoolVar(&jsonOutput, "json", false, "Print result as JSON")
 	f.BoolVar(&countOnly, "count", false, "Print errors count only")
-	f.StringVar(&dleComposerDir, "dle-composer-dir", "", "DLE Composer classes directory")
 	f.StringVar(&phpVersion, "php-version", "", "PHP version to analyse for, e.g. 8.1 (default: the container's PHP)")
 	f.StringArrayVar(&dependencyRoots, "dependency-root", nil, "Directory used to resolve dependencies from dlestatic.yml (repeatable)")
 	return cmd

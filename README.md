@@ -184,10 +184,13 @@ from `example.com` to `www.example.com`); credentials are never forwarded there.
 Docker image, which is built from embedded assets on first use; no local
 PHP is needed. Plugin sources, include paths and the shared test Composer
 vendor directory are mounted read-only. Flags: `--json`, `--count`,
-`-t/--tool-verbose`, `--dle-composer-dir`, `--dependency-root` (repeatable),
+`-t/--tool-verbose`, `--dependency-root` (repeatable),
 `--php-version` (e.g. `8.1`; sets PHPStan's `phpVersion`, by default the
 image's PHP 8.4 is assumed). The exit code is 1 when there are findings (after `ignoreErrors`) or PHPStan
 failed, so it can gate CI.
+
+DLE classes and functions used by the analyser are described in the bundled
+`bootstrap.php`; static analysis does not download or mount a DLE installation.
 
 It reads the plugin's `dlestatic.yml` (`dependencies`,
 `excludePaths.analyse`, `strict`, `ignoreErrors`) and the `static` section of
@@ -195,7 +198,6 @@ the global config:
 
 ```yaml
 static:
-  dle_composer_dir: /path/to/dle/composer
   dependencies:            # explicit dependency directories
     ExampleDependency: /path/to/ExampleDependency
   dependency_roots: []     # <root>/<name> lookup; falls back to the top-level key
