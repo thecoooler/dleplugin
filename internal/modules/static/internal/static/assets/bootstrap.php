@@ -155,6 +155,22 @@ function xfieldsdataload($xfields)
     return [];
 }
 
+// DLE 19.0 and 21.0: only the members needed by analysed plugin code.
+abstract class DLEXFields
+{
+    /** @var array<string, mixed>|null */
+    public static $fields = null;
+
+    /**
+     * @param string $xfvalues
+     * @return array<string, string>
+     */
+    public static function xfieldsdataload($xfvalues)
+    {
+        return [];
+    }
+}
+
 /**
  * @param int $id
  * @return string

@@ -33,10 +33,10 @@ func TestLoadConfig(t *testing.T) {
 		err        string
 	}{
 		{name: "missing file", yaml: "-", want: Config{}},
-		{name: "section", yaml: "static:\n  dle_composer_dir: /c\n  dependencies:\n    ExampleDependency: /d\n  dependency_roots: [/r]\ndependency_roots: [/top]\n",
-			want: Config{DLEComposerDir: "/c", Dependencies: map[string]string{"ExampleDependency": "/d"}, DependencyRoots: []string{"/r"}}},
-		{name: "top-level roots", yaml: "static:\n  dle_composer_dir: /c\ndependency_roots: [/top]\n",
-			want: Config{DLEComposerDir: "/c", DependencyRoots: []string{"/top"}}},
+		{name: "section", yaml: "static:\n  dependencies:\n    ExampleDependency: /d\n  dependency_roots: [/r]\ndependency_roots: [/top]\n",
+			want: Config{Dependencies: map[string]string{"ExampleDependency": "/d"}, DependencyRoots: []string{"/r"}}},
+		{name: "top-level roots", yaml: "static: {}\ndependency_roots: [/top]\n",
+			want: Config{DependencyRoots: []string{"/top"}}},
 		{name: "no static section", yaml: "host_dir: /h\n", want: Config{}},
 		{name: "not mapping", yaml: "static: invalid\n", err: "static must be a mapping"},
 		{name: "bad roots", yaml: "dependency_roots: x\n", err: "dependency_roots must be a list"},
@@ -105,15 +105,15 @@ func TestIncludePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	conf := &PluginConf{Dependencies: []string{"A", "B", "C"}}
-	paths, warnings := IncludePaths(conf, "/composer/", map[string]string{"A": "/a"}, []string{filepath.Join(dir, "missing"), filepath.Join(dir, "roots")})
-	want := []string{"/composer", "/a/src", filepath.Join(dir, "roots", "B", "src")}
+	paths, warnings := IncludePaths(conf, map[string]string{"A": "/a"}, []string{filepath.Join(dir, "missing"), filepath.Join(dir, "roots")})
+	want := []string{"/a/src", filepath.Join(dir, "roots", "B", "src")}
 	if !reflect.DeepEqual(paths, want) {
 		t.Errorf("paths = %v", paths)
 	}
 	if !reflect.DeepEqual(warnings, []string{"Dependency not found: C"}) {
 		t.Errorf("warnings = %v", warnings)
 	}
-	if paths, _ := IncludePaths(&PluginConf{}, "", nil, nil); paths != nil {
+	if paths, _ := IncludePaths(&PluginConf{}, nil, nil); paths != nil {
 		t.Errorf("empty = %v", paths)
 	}
 }

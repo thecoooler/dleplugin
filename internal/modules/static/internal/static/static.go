@@ -27,7 +27,6 @@ var DefaultIgnoreErrors = []string{
 
 // Config is the "static" section of the global config.
 type Config struct {
-	DLEComposerDir  string            `yaml:"dle_composer_dir"`
 	Dependencies    map[string]string `yaml:"dependencies"`
 	DependencyRoots []string          `yaml:"dependency_roots"`
 }
@@ -119,13 +118,9 @@ func ReadSlug(root string) (string, error) {
 	return m.Slug, nil
 }
 
-// IncludePaths returns the DLE Composer directory followed by the src/
-// directory of every dependency. A dependency is looked up in deps by name,
+// IncludePaths returns the src/ directory of every dependency. A dependency is looked up in deps by name,
 // then as <root>/<name> in roots; unresolved ones are reported as warnings.
-func IncludePaths(conf *PluginConf, dleComposerDir string, deps map[string]string, roots []string) (paths, warnings []string) {
-	if dleComposerDir != "" {
-		paths = append(paths, filepath.Clean(dleComposerDir))
-	}
+func IncludePaths(conf *PluginConf, deps map[string]string, roots []string) (paths, warnings []string) {
 	for _, dep := range conf.Dependencies {
 		dir, ok := deps[dep]
 		if !ok {
@@ -190,7 +185,6 @@ type Options struct {
 	Files []string
 	// InvocationDir resolves relative include paths.
 	InvocationDir   string
-	DLEComposerDir  string
 	Dependencies    map[string]string
 	DependencyRoots []string
 	// PHPVersion is the PHP version to analyse for in PHPStan's format
@@ -221,7 +215,7 @@ func Run(ctx context.Context, runner *process.Runner, o Options) (*Result, error
 	if err != nil {
 		return nil, err
 	}
-	includes, warnings := IncludePaths(conf, o.DLEComposerDir, o.Dependencies, o.DependencyRoots)
+	includes, warnings := IncludePaths(conf, o.Dependencies, o.DependencyRoots)
 	image, err := EnsureImage(ctx, runner, o.StreamBuild, o.Notify)
 	if err != nil {
 		return nil, err
