@@ -36,6 +36,7 @@ func (module) Commands(rt *app.Runtime) []*cobra.Command {
 
 type options struct {
 	file          string
+	version       string
 	login         string
 	adminPath     string
 	passwordStdin bool
@@ -65,7 +66,7 @@ func uploadCommand(rt *app.Runtime) *cobra.Command {
 		Long: `Upload the plugin to a DLE site through its admin panel.
 
 Without --file the plugin in the current directory is built first and its
-dist/ artifact is uploaded. HOST is a domain (https is assumed, http for
+dist/ artifact is uploaded; --version overrides the version from dleplugin.yml. HOST is a domain (https is assumed, http for
 *.localhost) or the full admin URL, e.g. https://example.com/panel.php.
 Saved sites are read from global and project dleplugin-deploy.yaml files.
 Project records replace global records for the same host. Without HOST,
@@ -93,6 +94,7 @@ An explicit admin URL bypasses saved connection settings.`,
 	}
 	f := cmd.Flags()
 	f.StringVarP(&o.file, "file", "f", "", "Upload a ready plugin file (.xml or .zip) instead of building")
+	f.StringVar(&o.version, "version", "", "Plugin version written to the built XML (default: version from dleplugin.yml)")
 	f.StringVarP(&o.login, "login", "u", "", "Admin login")
 	f.StringVar(&o.adminPath, "admin-path", "", "Admin script path (default \"admin.php\")")
 	f.BoolVar(&o.passwordStdin, "password-stdin", false, "Read the admin password from stdin")
@@ -100,11 +102,12 @@ An explicit admin URL bypasses saved connection settings.`,
 	f.BoolVar(&o.allowNew, "new", false, "Install the plugin when it is not installed on the site")
 	f.BoolVar(&o.dryRun, "dry-run", false, "Log in and look up the plugin without uploading")
 	f.BoolVar(&o.insecure, "insecure", false, "Skip TLS certificate verification")
+	cmd.MarkFlagsMutuallyExclusive("file", "version")
 	return cmd
 }
 
 func run(cmd *cobra.Command, rt *app.Runtime, o options, host string) error {
-	artifact, err := artifact(cmd, rt, o.file)
+	artifact, err := artifact(rt, o.file, o.version)
 	if err != nil {
 		return err
 	}
@@ -190,8 +193,9 @@ func run(cmd *cobra.Command, rt *app.Runtime, o options, host string) error {
 }
 
 // artifact returns the file to upload: file resolved against the working
-// directory, or the freshly built dist/ artifact of the current plugin.
-func artifact(cmd *cobra.Command, rt *app.Runtime, file string) (string, error) {
+// directory, or the freshly built dist/ artifact of the current plugin with
+// version (the manifest version when empty).
+func artifact(rt *app.Runtime, file, version string) (string, error) {
 	wd, err := rt.WorkDir()
 	if err != nil {
 		return "", err
@@ -218,7 +222,10 @@ func artifact(cmd *cobra.Command, rt *app.Runtime, file string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	res, err := build.WriteDist(p.Root(), p.Info(), files, build.CommitID(cmd.Context(), p.Root()))
+	if version == "" {
+		version = p.Info().Version
+	}
+	res, err := build.WriteDist(p.Root(), p.Info(), files, version)
 	if err != nil {
 		return "", err
 	}

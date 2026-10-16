@@ -4,14 +4,11 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/flate"
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/yuin/goldmark"
 	gmhtml "github.com/yuin/goldmark/renderer/html"
@@ -171,20 +168,6 @@ func addZipFile(zw *zip.Writer, src, name string) error {
 		return fmt.Errorf("archive %s: %w", src, err)
 	}
 	return nil
-}
-
-// CommitID returns the first 7 characters of HEAD in dir, or "" when git is
-// unavailable, dir is not inside a repository or there are no commits.
-func CommitID(ctx context.Context, dir string) string {
-	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "HEAD").Output()
-	if err != nil {
-		return ""
-	}
-	id := strings.TrimSpace(string(out))
-	if len(id) < 7 {
-		return ""
-	}
-	return id[:7]
 }
 
 // readmeTemplate is the README.html page wrapper (title, body).

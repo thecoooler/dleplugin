@@ -32,6 +32,7 @@ empty path. `dleplugin init` writes both fields.
 | `slug`        | string  | required         | Internal plugin slug. Used in generated paths and helper code. |
 | `name`        | string  | required         | Display name written to the DLE plugin XML.                    |
 | `description` | string  | `""`             | Display description written to the XML.                        |
+| `version`     | string  | `""`             | Plugin version written to the XML `<version>`, see below.      |
 | `namespace`   | string  | see below        | PHP namespace of the plugin classes (autoloader prefix).       |
 | `mount`       | path    | see below        | Target directory for files copied from `src/`.                 |
 | `dependencies`| list    | `[]`             | Names of required plugins (DLE `needplugin`), see below.       |
@@ -65,6 +66,16 @@ Each field defaults from the other:
 
 With `extras.autoloader` enabled, a namespace is required and a set `mount`
 must equal `engine/<namespace as a path>`; otherwise loading fails.
+
+### version
+
+```yaml
+version: 1.2.0
+```
+
+Written to the XML `<version>` by `build` and `deploy upload`. The
+`--version` flag of these commands overrides it for one build (for example in
+CI releases). Without either the version is empty.
 
 ### dependencies
 
