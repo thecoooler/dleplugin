@@ -5,26 +5,28 @@ use semantic versions such as `v0.1.0`. Build with Go 1.27.2+ and keep the
 minimum patch version in `go.mod` current. CI uses that version and scans both
 sources and built binaries with the pinned govulncheck version.
 
-Before a release, run `make pipeline`, `go test -race -count=1 ./...`, image
-smoke checks and the vulnerability scans. Build archives locally with:
+Releases are verified and built by GitHub Actions; no local checks are
+required. To release, make sure CI is green on main, then tag a commit on main
+and push the tag:
 
 ```sh
-python3 scripts/release.py v0.1.0
-# One platform for a local packaging check:
-python3 scripts/release.py v0.0.0-check --platform linux/amd64 --output /tmp/dleplugin-release-check
+git tag -a v0.1.0 -m v0.1.0
+git push origin v0.1.0
+gh run watch "$(gh run list --workflow release.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
 ```
 
-Packaging requires Go, Python 3, and network access for vulnerability data and
-uncached modules. It builds Linux, macOS and Windows for amd64 and arm64,
-disables CGO, scans every resulting binary, and includes README, MIT LICENSE,
-third-party notices, license texts and SHA256SUMS. Archive directory names
-contain the version and target platform. Packaging does not create a Git tag,
-push changes, or publish a release.
+The Release workflow rejects tags that are not on main, runs the full CI
+(tests, race tests, vulnerability scans, cross builds, image smoke checks),
+then packages with `scripts/release.py`. Packaging builds Linux, macOS and
+Windows for amd64 and arm64, disables CGO, scans every resulting binary, and
+includes README, MIT LICENSE, third-party notices, license texts and
+SHA256SUMS. Archive directory names contain the version and target platform.
 
-After reviewing the final commit and artifacts, a maintainer creates and
-pushes a version tag. The Release workflow runs CI first and creates a **draft**
-GitHub release. Inspect its assets and notes before publishing the draft.
-Retries update only an existing draft; published assets are not overwritten.
+The workflow creates a **draft** GitHub release. Inspect its assets and notes
+before publishing the draft. Retries update only an existing draft; published
+assets are not overwritten. To debug packaging, `scripts/release.py` can also
+run locally, for example
+`python3 scripts/release.py v0.0.0-check --platform linux/amd64 --output /tmp/dleplugin-release-check`.
 
 When the repository is created, enable private vulnerability reporting and
 make the CI test/security/build/image jobs required checks for main. Review
