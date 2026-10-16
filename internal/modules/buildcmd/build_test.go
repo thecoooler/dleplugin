@@ -87,6 +87,30 @@ func TestBuildVersion(t *testing.T) {
 	if got != want {
 		t.Fatal("xml differs from golden with version")
 	}
+
+	manifest := filepath.Join(e.Work, "dleplugin.yml")
+	b, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, append([]byte("version: 2.0.0\n"), b...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"build"}, "2.0.0"},
+		{[]string{"build", "--version", "3.0.0"}, "3.0.0"},
+	} {
+		if code := e.Run(tc.args...); code != 0 {
+			t.Fatalf("%v: exit %d: %s", tc.args, code, e.ErrB)
+		}
+		got := moduletest.ReadFile(t, filepath.Join(e.Work, "dist", "ExamplePlugin.xml"))
+		if !strings.Contains(got, "<version>"+tc.want+"</version>") {
+			t.Errorf("%v: xml lacks version %s", tc.args, tc.want)
+		}
+	}
 }
 
 func TestBuildOutsidePlugin(t *testing.T) {

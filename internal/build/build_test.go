@@ -3,10 +3,8 @@ package build
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -279,34 +277,6 @@ func TestWriteDistRequiresHtaccess(t *testing.T) {
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Error("dist was touched")
-	}
-}
-
-func TestCommitID(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-	ctx := context.Background()
-	dir := t.TempDir()
-	if got := CommitID(ctx, dir); got != "" {
-		t.Errorf("non-repo: %q", got)
-	}
-	run := func(args ...string) {
-		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	run("init", "-q")
-	if got := CommitID(ctx, dir); got != "" {
-		t.Errorf("no commits: %q", got)
-	}
-	os.WriteFile(filepath.Join(dir, "f"), []byte("x"), 0o644)
-	run("add", "f")
-	run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "m")
-	if got := CommitID(ctx, dir); len(got) != 7 {
-		t.Errorf("commit id %q", got)
 	}
 }
 

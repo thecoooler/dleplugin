@@ -132,6 +132,38 @@ func TestBuildAndUpdate(t *testing.T) {
 	}
 }
 
+func TestBuildVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"manifest", nil, "2.0.0"},
+		{"flag", []string{"--version", "3.0.0"}, "3.0.0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := dleadmintest.New(t, "admin", "secret", dleadmin.Plugin{ID: 7, Name: "Demo Plugin"})
+			e := newEnv(t, "secret\n", false)
+			fixture(t, "admin_section_only", e.work)
+			manifest := filepath.Join(e.work, "dleplugin.yml")
+			b, err := os.ReadFile(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(manifest, append([]byte("version: 2.0.0\n"), b...), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			args := append([]string{"deploy", "upload", s.AdminURL(), "-u", "admin", "--password-stdin"}, tc.args...)
+			if code := e.run(args...); code != 0 {
+				t.Fatalf("exit %d: %s", code, e.errB)
+			}
+			if ups := s.Uploads(); len(ups) != 1 || !strings.Contains(ups[0].Content, "<version>"+tc.want+"</version>") {
+				t.Fatalf("uploads = %+v", ups)
+			}
+		})
+	}
+}
+
 func TestBuildSplitUploadsZip(t *testing.T) {
 	s := dleadmintest.New(t, "admin", "secret", dleadmin.Plugin{ID: 2, Name: "QF Plugin"})
 	e := newEnv(t, "", false)
@@ -396,6 +428,7 @@ func TestErrors(t *testing.T) {
 		{name: "not installed", stdin: "secret", args: []string{s.AdminURL(), "-u", "admin", "--password-stdin", "-f", "other.xml"}, err: `plugin "Other Plugin" is not installed on`},
 		{name: "admin path twice", stdin: "secret", args: []string{s.AdminURL(), "--admin-path", "x.php", "-u", "admin", "--password-stdin"}, err: "admin path is set both"},
 		{name: "missing file", args: []string{"-f", "nope.xml"}, err: "plugin file:"},
+		{name: "version with file", args: []string{"-f", "ready.xml", "--version", "1.0"}, err: "[file version] were all set"},
 		{name: "outside plugin", args: []string{"-f", ""}, err: "dleplugin.yml was not found"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

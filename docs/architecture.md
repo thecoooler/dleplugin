@@ -26,7 +26,7 @@ internal/plugin/           plugin project: locate root, load manifest, merge
                            extra configs, Info() with generated extras,
                            source files, init, NormalizeFiles
 internal/build/            XML generation and dist/ writer (README.html,
-                           split zip, git commit id)
+                           split zip)
 internal/dlexml/           reading DLE plugin XML (file operations, tags)
 internal/convert/          plugin XML -> dleplugin.yml text
 internal/diff/             XML vs XML diff via convert + system `diff`
@@ -156,8 +156,8 @@ services for deployment sites, PHPStan, and patch checking.
 ## Behavior notes
 
 - `build` does not require the global config or a DLE installation: building
-  is a pure operation. `build --version` sets `<version>` in the XML (for CI
-  releases); without it the short git commit is used.
+  is a pure operation. `<version>` in the XML comes from the manifest
+  `version` field; `build --version` and `deploy upload --version` override it.
 - Modules are compiled in; there is no runtime discovery.
 - `deploy` is a command group: `deploy sites` manages host-keyed connections
   and `deploy upload [HOST]` builds/uploads to one site. Global sites live

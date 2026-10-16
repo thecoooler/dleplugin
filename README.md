@@ -160,6 +160,7 @@ a login from a saved site satisfies the `--password-stdin` login requirement.
 | -------------------- | -------------------------------------------------------- |
 | `HOST`               | saved host, domain, or full admin URL                     |
 | `-f, --file PATH`    | upload a ready `.xml`/`.zip` instead of building         |
+| `--version V`        | version for the built XML (not with `--file`)            |
 | `-u, --login NAME`   | admin login                                              |
 | `--admin-path PATH`  | admin script, default `admin.php` (not with a URL path)  |
 | `--password-env NAME`| environment variable holding the admin password         |

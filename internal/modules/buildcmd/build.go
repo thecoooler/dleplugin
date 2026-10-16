@@ -29,9 +29,9 @@ func buildCommand(rt *app.Runtime) *cobra.Command {
 		Long: `Build the plugin into dist/.
 
 The plugin version (<version> in the XML) is --version when given, otherwise
-the short git commit of the plugin directory (empty outside a repository).`,
+the version field of dleplugin.yml (empty when unset).`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			wd, err := rt.WorkDir()
 			if err != nil {
 				return err
@@ -45,7 +45,7 @@ the short git commit of the plugin directory (empty outside a repository).`,
 				return err
 			}
 			if version == "" {
-				version = build.CommitID(cmd.Context(), p.Root())
+				version = p.Info().Version
 			}
 			if _, err := build.WriteDist(p.Root(), p.Info(), files, version); err != nil {
 				return err
@@ -54,6 +54,6 @@ the short git commit of the plugin directory (empty outside a repository).`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&version, "version", "", "plugin version written to the XML (default: short git commit)")
+	cmd.Flags().StringVar(&version, "version", "", "plugin version written to the XML (default: version from dleplugin.yml)")
 	return cmd
 }

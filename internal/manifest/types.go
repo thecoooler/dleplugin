@@ -63,6 +63,8 @@ type Info struct {
 	Slug        string                  `json:"slug"`
 	Name        string                  `json:"name"`
 	Description string                  `json:"description"`
+	// Version is the plugin version written to the XML ("" when unset).
+	Version string `json:"version,omitempty"`
 	// Mount is a normalized slash-separated path ("" when unset).
 	Mount string `json:"mount"`
 	// Namespace is the PHP namespace of the plugin classes ("" when it cannot
