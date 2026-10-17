@@ -56,7 +56,7 @@ func projectXML(t *testing.T, dir string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	x, err := build.XML(p.Info(), files, "test-version")
+	x, err := build.XML(p.Info(), files, "test-version", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestConvertGoldenRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			x, err := build.XML(p.Info(), files, "")
+			x, err := build.XML(p.Info(), files, "", "")
 			if err != nil {
 				t.Fatal(err)
 			}

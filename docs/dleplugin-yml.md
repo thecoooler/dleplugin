@@ -33,6 +33,7 @@ empty path. `dleplugin init` writes both fields.
 | `name`        | string  | required         | Display name written to the DLE plugin XML.                    |
 | `description` | string  | `""`             | Display description written to the XML.                        |
 | `version`     | string  | `""`             | Plugin version written to the XML `<version>`, see below.      |
+| `upgrade_url` | string  | `""`             | Plugin upgrade URL written to the XML `<upgradeurl>`, see below. |
 | `namespace`   | string  | see below        | PHP namespace of the plugin classes (autoloader prefix).       |
 | `mount`       | path    | see below        | Target directory for files copied from `src/`.                 |
 | `dependencies`| list    | `[]`             | Names of required plugins (DLE `needplugin`), see below.       |
@@ -76,6 +77,24 @@ version: 1.2.0
 Written to the XML `<version>` by `build` and `deploy upload`. The
 `--version` flag of these commands overrides it for one build (for example in
 CI releases). Without either the version is empty.
+
+### upgrade_url
+
+```yaml
+upgrade_url: https://example.com/downloads/myplugin.dleplugin.xml
+```
+
+URL DLE requests to upgrade the plugin, written to the XML `<upgradeurl>` by
+`build` and `deploy upload`. Leading and trailing whitespace is trimmed. Only
+https links with a host and without user info are accepted; a relative, http
+or malformed value fails manifest loading and building, and an existing
+`dist/` is left unchanged.
+
+The `--upgrade-url` flag of these commands overrides the field for one build
+and is trimmed and validated the same way. The manifest is still loaded, so an
+invalid `upgrade_url` fails even when a valid flag is given. The flag cannot
+clear the URL: `--upgrade-url ""` (or only whitespace) is an error; remove the
+field from `dleplugin.yml` to build without an upgrade URL.
 
 ### dependencies
 

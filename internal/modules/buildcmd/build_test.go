@@ -30,6 +30,13 @@ func TestHelp(t *testing.T) {
 			if cyrillic.MatchString(out) {
 				t.Fatalf("cyrillic in help: %s", out)
 			}
+			if len(args) > 0 {
+				for _, flag := range []string{"--version", "--upgrade-url"} {
+					if !strings.Contains(out, flag) {
+						t.Errorf("help lacks %s", flag)
+					}
+				}
+			}
 			e.NoConfig(t)
 		})
 	}
@@ -110,6 +117,73 @@ func TestBuildVersion(t *testing.T) {
 		if !strings.Contains(got, "<version>"+tc.want+"</version>") {
 			t.Errorf("%v: xml lacks version %s", tc.args, tc.want)
 		}
+	}
+}
+
+func TestBuildUpgradeURL(t *testing.T) {
+	e := moduletest.NewEnv(t, "", buildcmd.Module())
+	moduletest.CopyDir(t, moduletest.Golden(t, "plugin", "complete", "input"), e.Work)
+	manifest := filepath.Join(e.Work, "dleplugin.yml")
+	b, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, append([]byte("upgrade_url: https://example.com/manifest.xml\n"), b...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"build"}, "https://example.com/manifest.xml"},
+		{[]string{"build", "--upgrade-url", "https://example.com/flag.xml"}, "https://example.com/flag.xml"},
+		{[]string{"build", "--upgrade-url", "  https://example.com/padded.xml  "}, "https://example.com/padded.xml"},
+	} {
+		if code := e.Run(tc.args...); code != 0 {
+			t.Fatalf("%v: exit %d: %s", tc.args, code, e.ErrB)
+		}
+		got := moduletest.ReadFile(t, filepath.Join(e.Work, "dist", "ExamplePlugin.xml"))
+		if !strings.Contains(got, "<upgradeurl>"+tc.want+"</upgradeurl>") {
+			t.Errorf("%v: xml lacks upgradeurl %s", tc.args, tc.want)
+		}
+	}
+}
+
+func TestBuildUpgradeURLErrors(t *testing.T) {
+	e := moduletest.NewEnv(t, "", buildcmd.Module())
+	moduletest.CopyDir(t, moduletest.Golden(t, "plugin", "complete", "input"), e.Work)
+	for _, tc := range []struct {
+		name string
+		args []string
+		err  string
+	}{
+		{"http", []string{"build", "--upgrade-url", "http://example.com/plugin.xml"}, `invalid upgrade URL "http://example.com/plugin.xml": scheme must be https`},
+		{"blank flag", []string{"build", "--upgrade-url", "  "}, "--upgrade-url is empty"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if code := e.Run(tc.args...); code != 1 {
+				t.Fatalf("exit %d", code)
+			}
+			if !strings.Contains(e.ErrB.String(), tc.err) {
+				t.Errorf("err = %q, want %q", e.ErrB.String(), tc.err)
+			}
+		})
+	}
+
+	// A manifest upgrade URL is validated when the plugin loads.
+	manifest := filepath.Join(e.Work, "dleplugin.yml")
+	c, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, append([]byte("upgrade_url: ftp://example.com/plugin.xml\n"), c...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := e.Run("build"); code != 1 {
+		t.Fatal("exit")
+	}
+	if !strings.Contains(e.ErrB.String(), "upgrade_url: invalid upgrade URL") {
+		t.Errorf("err = %q", e.ErrB.String())
 	}
 }
 

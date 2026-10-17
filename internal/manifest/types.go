@@ -65,6 +65,9 @@ type Info struct {
 	Description string                  `json:"description"`
 	// Version is the plugin version written to the XML ("" when unset).
 	Version string `json:"version,omitempty"`
+	// UpgradeURL is the https URL DLE checks for plugin updates, written
+	// to the XML <upgradeurl> ("" when unset).
+	UpgradeURL string `json:"upgrade_url,omitempty"`
 	// Mount is a normalized slash-separated path ("" when unset).
 	Mount string `json:"mount"`
 	// Namespace is the PHP namespace of the plugin classes ("" when it cannot

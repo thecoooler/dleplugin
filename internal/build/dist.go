@@ -26,7 +26,7 @@ type Result struct {
 
 // WriteDist rebuilds root/dist: the plugin XML, README.html (when
 // root/README.md exists) and, in split mode, the zip archive.
-func WriteDist(root string, info *manifest.Info, files []manifest.SourceFile, version string) (*Result, error) {
+func WriteDist(root string, info *manifest.Info, files []manifest.SourceFile, version, upgradeURL string) (*Result, error) {
 	if err := manifest.ValidateSlug(info.Slug); err != nil {
 		return nil, err
 	}
@@ -46,6 +46,9 @@ func WriteDist(root string, info *manifest.Info, files []manifest.SourceFile, ve
 		if _, err := os.Stat(filepath.Join(root, "src", ".htaccess")); err != nil {
 			return nil, errors.New("Not found .htaccess, but it is required when build split mode is true")
 		}
+	}
+	if err := manifest.ValidateUpgradeURL(upgradeURL); err != nil {
+		return nil, err
 	}
 
 	project, err := os.OpenRoot(root)
@@ -68,7 +71,7 @@ func WriteDist(root string, info *manifest.Info, files []manifest.SourceFile, ve
 	defer output.Close()
 	res := &Result{Dir: dist}
 	xmlPath := filepath.Join(dist, info.Slug+".xml")
-	xml, err := XML(info, files, version)
+	xml, err := XML(info, files, version, upgradeURL)
 	if err != nil {
 		return nil, err
 	}

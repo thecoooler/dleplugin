@@ -100,7 +100,7 @@ func TestHelp(t *testing.T) {
 	if code := e.run("deploy", "upload", "--help"); code != 0 {
 		t.Fatalf("exit %d: %s", code, e.errB)
 	}
-	for _, s := range []string{"Usage:", "--file", "--login", "--admin-path", "--password-stdin", "--new", "--dry-run", "--insecure", deploy.PasswordEnv} {
+	for _, s := range []string{"Usage:", "--file", "--version", "--upgrade-url", "--login", "--admin-path", "--password-stdin", "--new", "--dry-run", "--insecure", deploy.PasswordEnv} {
 		if !strings.Contains(e.out.String(), s) {
 			t.Errorf("help lacks %q", s)
 		}
@@ -159,6 +159,100 @@ func TestBuildVersion(t *testing.T) {
 			}
 			if ups := s.Uploads(); len(ups) != 1 || !strings.Contains(ups[0].Content, "<version>"+tc.want+"</version>") {
 				t.Fatalf("uploads = %+v", ups)
+			}
+		})
+	}
+}
+
+func TestBuildUpgradeURL(t *testing.T) {
+	s := dleadmintest.New(t, "admin", "secret", dleadmin.Plugin{ID: 7, Name: "Demo Plugin"})
+	e := newEnv(t, "secret\n", false)
+	fixture(t, "admin_section_only", e.work)
+	manifest := filepath.Join(e.work, "dleplugin.yml")
+	b, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, append([]byte("upgrade_url: https://example.com/manifest.xml\n"), b...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := e.run("deploy", "upload", s.AdminURL(), "-u", "admin", "--password-stdin"); code != 0 {
+		t.Fatalf("exit %d: %s", code, e.errB)
+	}
+	if ups := s.Uploads(); len(ups) != 1 || !strings.Contains(ups[0].Content, "<upgradeurl>https://example.com/manifest.xml</upgradeurl>") {
+		t.Fatalf("uploads = %+v", ups)
+	}
+
+	// A padded flag overrides the manifest URL and coexists with --version.
+	e = newEnv(t, "secret\n", false)
+	fixture(t, "admin_section_only", e.work)
+	if err := os.WriteFile(filepath.Join(e.work, "dleplugin.yml"), append([]byte("upgrade_url: https://example.com/manifest.xml\n"), b...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := e.run("deploy", "upload", s.AdminURL(), "-u", "admin", "--password-stdin", "--version", "3.0.0", "--upgrade-url", " https://example.com/flag.xml "); code != 0 {
+		t.Fatalf("exit %d: %s", code, e.errB)
+	}
+	ups := s.Uploads()
+	if len(ups) != 2 {
+		t.Fatalf("uploads = %+v", ups)
+	}
+	for _, want := range []string{"<upgradeurl>https://example.com/flag.xml</upgradeurl>", "<version>3.0.0</version>"} {
+		if !strings.Contains(ups[1].Content, want) {
+			t.Errorf("upload lacks %q: %s", want, ups[1].Content)
+		}
+	}
+	if strings.Contains(ups[1].Content, "manifest.xml") {
+		t.Errorf("manifest URL won over the flag: %s", ups[1].Content)
+	}
+}
+
+func TestInvalidManifestUpgradeURL(t *testing.T) {
+	s := dleadmintest.New(t, "admin", "secret", dleadmin.Plugin{ID: 7, Name: "Demo Plugin"})
+	e := newEnv(t, "secret\n", false)
+	fixture(t, "admin_section_only", e.work)
+	manifest := filepath.Join(e.work, "dleplugin.yml")
+	b, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, append([]byte("upgrade_url: ftp://example.com/plugin.xml\n"), b...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The manifest is validated even when a valid flag overrides it.
+	if code := e.run("deploy", "upload", s.AdminURL(), "-u", "admin", "--password-stdin", "--upgrade-url", "https://example.com/flag.xml"); code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	if !strings.Contains(e.errB.String(), "upgrade_url: invalid upgrade URL") {
+		t.Errorf("err = %q", e.errB)
+	}
+	if len(s.Uploads()) != 0 {
+		t.Fatal("uploaded")
+	}
+}
+
+func TestUpgradeURLFlags(t *testing.T) {
+	s := dleadmintest.New(t, "admin", "secret", dleadmin.Plugin{ID: 7, Name: "Demo Plugin"})
+	for _, tc := range []struct {
+		name string
+		args []string
+		err  string
+	}{
+		{name: "http flag", args: []string{s.AdminURL(), "-u", "admin", "--upgrade-url", "http://example.com/plugin.xml"}, err: `invalid upgrade URL "http://example.com/plugin.xml": scheme must be https`},
+		{name: "file with upgrade-url", args: []string{"-f", "ready.xml", "--upgrade-url", "https://example.com/plugin.xml"}, err: "[file upgrade-url] were all set"},
+		{name: "blank flag", args: []string{s.AdminURL(), "-u", "admin", "--upgrade-url", " "}, err: "--upgrade-url is empty"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv(t, "secret\n", false)
+			fixture(t, "admin_section_only", e.work)
+			writeXML(t, e.work, "Demo Plugin")
+			if code := e.run(append([]string{"deploy", "upload"}, tc.args...)...); code != 1 {
+				t.Fatalf("exit %d: %s", code, e.errB)
+			}
+			if !strings.Contains(e.errB.String(), tc.err) {
+				t.Errorf("err = %q, want %q", e.errB.String(), tc.err)
+			}
+			if len(s.Uploads()) != 0 {
+				t.Fatal("uploaded")
 			}
 		})
 	}
