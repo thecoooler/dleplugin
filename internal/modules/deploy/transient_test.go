@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/thecoooler/dleplugin/internal/deploysites"
 	"github.com/thecoooler/dleplugin/internal/dleadmin/dleadmintest"
-	"github.com/thecoooler/dleplugin/internal/modules/deploy/internal/deploysites"
 )
 
 func TestTransientDeployFlagsNotSaved(t *testing.T) {

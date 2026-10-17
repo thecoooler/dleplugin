@@ -7,6 +7,10 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
+// DefaultPasswordEnv is the environment variable holding the admin password
+// of a site without a password_env of its own.
+const DefaultPasswordEnv = "DLEPLUGIN_PASSWORD"
+
 // keyringService names dleplugin entries in the OS credential store.
 const keyringService = "dleplugin"
 

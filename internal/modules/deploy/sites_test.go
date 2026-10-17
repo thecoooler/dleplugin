@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/thecoooler/dleplugin/internal/deploysites"
 	"github.com/thecoooler/dleplugin/internal/dleadmin"
 	"github.com/thecoooler/dleplugin/internal/dleadmin/dleadmintest"
 	"github.com/thecoooler/dleplugin/internal/modules/deploy"
-	"github.com/thecoooler/dleplugin/internal/modules/deploy/internal/deploysites"
 )
 
 func saveSites(t *testing.T, path string, sites map[string]deploysites.Site) {

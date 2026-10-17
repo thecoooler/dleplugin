@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/thecoooler/dleplugin/internal/app"
-	"github.com/thecoooler/dleplugin/internal/modules/deploy/internal/deploysites"
+	"github.com/thecoooler/dleplugin/internal/deploysites"
 	"github.com/zalando/go-keyring"
 )
 

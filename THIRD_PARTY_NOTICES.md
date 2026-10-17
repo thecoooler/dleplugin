@@ -9,6 +9,8 @@ supported platforms and may also include development-only dependencies.
 
 Notable dependencies include the MySQL driver (MPL-2.0), Cobra (Apache-2.0),
 Goldmark and go-keyring (MIT), and Go's supplemental libraries (BSD-style).
+The desktop app also includes MyGo and purego (MIT and Apache-2.0) and
+go-text/typesetting (BSD-style or Unlicense).
 Consult the included license texts for the exact terms and copyright notices.
 
 Docker tool images contain PHP, Composer, PHPStan, Pest and their dependencies;

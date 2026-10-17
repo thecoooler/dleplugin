@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thecoooler/dleplugin/internal/modules/deploy/internal/deploysites"
+	"github.com/thecoooler/dleplugin/internal/deploysites"
 )
 
 func TestEffectiveProjectReplacesWholeRecord(t *testing.T) {

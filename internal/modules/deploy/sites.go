@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/thecoooler/dleplugin/internal/app"
+	"github.com/thecoooler/dleplugin/internal/deploysites"
 	"github.com/thecoooler/dleplugin/internal/dleadmin"
-	"github.com/thecoooler/dleplugin/internal/modules/deploy/internal/deploysites"
 	"github.com/thecoooler/dleplugin/internal/plugin"
 )
 
