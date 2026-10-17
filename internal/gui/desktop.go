@@ -1,12 +1,14 @@
 package gui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -41,7 +43,11 @@ func Main(modules ...app.Module) error {
 		})
 	})
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { a.cancelJob() })
-	return mygo.App.Run()
+	err = mygo.App.Run()
+	if !a.shutdown(time.Minute) {
+		return errors.Join(err, errors.New("timed out waiting for command cleanup"))
+	}
+	return err
 }
 
 // mygoDesktop is the desktop through MyGo.

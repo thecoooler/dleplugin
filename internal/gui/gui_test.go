@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/zalando/go-keyring"
@@ -493,5 +494,267 @@ func TestSettingsFile(t *testing.T) {
 	}
 	if _, err := LoadSettings(path); err == nil {
 		t.Fatal("invalid file loads")
+	}
+}
+
+func TestDeployTargetClearsPassword(t *testing.T) {
+	e := newEnv(t)
+	root := writeProject(t, filepath.Join(t.TempDir(), "demo"))
+	global, _ := registryPaths(e.cfg, root)
+	if err := deploysites.Save(global, &deploysites.Document{Sites: map[string]deploysites.Site{
+		"first.example": {Login: "admin"}, "second.example": {Login: "admin"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	e.app.selectProject(root)
+	e.settle()
+	pv := e.app.projects[root]
+	pv.tab = tabDeploy
+	e.settle()
+	for _, target := range []string{"second.example", customSite} {
+		pv.deploy.password, pv.deploy.remember = "secret", true
+		e.tt.Frame()
+		e.click(pv.deploy.site)
+		e.click(target)
+		if pv.deploy.password != "" || pv.deploy.remember {
+			t.Fatalf("credentials retained for %s", target)
+		}
+	}
+	for _, field := range []string{"Host or admin URL", "Login"} {
+		pv.deploy.password, pv.deploy.remember = "secret", true
+		e.tt.Frame()
+		e.click(field)
+		e.tt.Type("changed")
+		if pv.deploy.password != "" || pv.deploy.remember {
+			t.Fatalf("credentials retained after editing %s", field)
+		}
+	}
+	// A removed selection must not transfer credentials to the default site.
+	pv.deploy.site, pv.deploy.password, pv.deploy.remember = "removed.example", "secret", true
+	e.tt.Frame()
+	if pv.deploy.password != "" || pv.deploy.remember {
+		t.Fatal("credentials retained after removing site")
+	}
+}
+
+func TestEditSitePreservesResolvedAdminPath(t *testing.T) {
+	for _, site := range []deploysites.Site{
+		{URL: "https://example.com/dle/panel.php", Login: "admin"},
+		{URL: "https://example.com", AdminPath: "nested/admin.php", Login: "admin"},
+		{Login: "admin"},
+	} {
+		t.Run(site.URL+site.AdminPath, func(t *testing.T) {
+			e := newEnv(t)
+			global, _ := registryPaths(e.cfg, "")
+			if err := deploysites.Save(global, &deploysites.Document{Sites: map[string]deploysites.Site{"example.com": site}}); err != nil {
+				t.Fatal(err)
+			}
+			e.app.selected = pageSites
+			e.settle()
+			e.app.globalSites.selected = 0
+			e.tt.Frame()
+			e.click("Edit…")
+			admin, err := site.AdminURL("example.com")
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := strings.TrimPrefix(admin.Path, "/")
+			if e.app.siteForm.adminPath != want {
+				t.Fatalf("admin path %q, want %q", e.app.siteForm.adminPath, want)
+			}
+			e.click("Check and save")
+			args := e.run.last(t).args
+			i := slices.Index(args, "--admin-path")
+			if i < 0 || args[i+1] != want {
+				t.Fatalf("edit args %q", args)
+			}
+		})
+	}
+}
+
+func TestSiteDialogCanCancelLoginCheck(t *testing.T) {
+	for _, escape := range []bool{false, true} {
+		t.Run(fmt.Sprint("escape=", escape), func(t *testing.T) {
+			e := newEnv(t)
+			e.app.selected = pageSites
+			e.settle()
+			e.click("Add site…")
+			e.app.siteForm.target, e.app.siteForm.login, e.app.siteForm.password = "example.com", "admin", "pw"
+			canceled := make(chan struct{})
+			release := make(chan struct{})
+			t.Cleanup(func() { e.app.cancelJob(); e.app.wait() })
+			var once sync.Once
+			unblock := func() { once.Do(func() { close(release) }) }
+			t.Cleanup(unblock)
+			e.app.run = func(ctx context.Context, _ string, _ []string, _ string, _ io.Writer) int {
+				<-ctx.Done()
+				close(canceled)
+				<-release
+				return 1
+			}
+			e.tt.Frame()
+			if err := e.tt.Click("Check and save"); err != nil {
+				t.Fatal(err)
+			}
+			if escape {
+				e.tt.Key(0, ui.KeyEscape)
+			} else if err := e.tt.Click("Cancel"); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-canceled:
+			case <-time.After(time.Second):
+				t.Fatal("dialog did not cancel login check")
+			}
+			if e.app.siteOpen {
+				t.Fatal("canceled dialog remains open")
+			}
+			unblock()
+			e.settle()
+			if e.app.siteOpen {
+				t.Fatal("completion reopened the canceled dialog")
+			}
+		})
+	}
+}
+
+func TestShutdownWaitsForCleanup(t *testing.T) {
+	for _, timeout := range []bool{false, true} {
+		t.Run(fmt.Sprint("timeout=", timeout), func(t *testing.T) {
+			e := newEnv(t)
+			canceled, release := make(chan struct{}), make(chan struct{})
+			e.app.run = func(ctx context.Context, _ string, _ []string, _ string, _ io.Writer) int {
+				<-ctx.Done()
+				close(canceled)
+				<-release
+				return 1
+			}
+			e.app.start("Tests", "", []string{"test"}, "", nil)
+			result := make(chan bool, 1)
+			bound := time.Second
+			if timeout {
+				bound = time.Millisecond
+			}
+			go func() { result <- e.app.shutdown(bound) }()
+			<-canceled
+			if timeout {
+				if <-result {
+					t.Fatal("shutdown finished before cleanup")
+				}
+			} else {
+				select {
+				case <-result:
+					t.Fatal("shutdown did not wait for cleanup")
+				case <-time.After(10 * time.Millisecond):
+				}
+			}
+			close(release)
+			if !timeout && !<-result {
+				t.Fatal("shutdown timed out after cleanup")
+			}
+			e.app.wait()
+			if e.app.busy() {
+				t.Fatal("job remains busy")
+			}
+		})
+	}
+}
+
+func TestCommandFailureAndCancellationMessages(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		t.Run(fmt.Sprint("canceled=", canceled), func(t *testing.T) {
+			e := newEnv(t)
+			release := make(chan struct{})
+			e.app.run = func(context.Context, string, []string, string, io.Writer) int { <-release; return 7 }
+			e.app.start("Build", "", []string{"build"}, "", nil)
+			want := "✖ Build failed (exit code 7)"
+			if canceled {
+				e.app.cancelJob()
+				want = "⚠ Build canceled"
+			}
+			close(release)
+			e.settle()
+			if got := e.app.console.lines[len(e.app.console.lines)-1]; got != want {
+				t.Fatalf("message %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestSiteChangesRefreshAllViews(t *testing.T) {
+	for _, change := range []string{"save", "remove", "password"} {
+		t.Run(change, func(t *testing.T) {
+			e := newEnv(t)
+			host := change + ".example"
+			global, _ := registryPaths(e.cfg, "")
+			doc := &deploysites.Document{Sites: map[string]deploysites.Site{host: {Login: "admin"}}}
+			if err := deploysites.Save(global, doc); err != nil {
+				t.Fatal(err)
+			}
+			for i := range 2 {
+				root := writeProject(t, filepath.Join(t.TempDir(), fmt.Sprint(i)))
+				e.app.selectProject(root)
+				e.settle()
+			}
+			e.app.selected = pageSites
+			e.settle()
+			e.app.run = func(_ context.Context, _ string, _ []string, _ string, _ io.Writer) int {
+				if change == "remove" {
+					delete(doc.Sites, host)
+				} else {
+					doc.Sites[host] = deploysites.Site{Login: "updated"}
+				}
+				if err := deploysites.Save(global, doc); err != nil {
+					return 1
+				}
+				return 0
+			}
+			switch change {
+			case "save":
+				e.app.openSite(siteForm{edit: true, global: true, target: host, login: "updated"})
+				e.app.saveSite()
+			case "remove":
+				e.app.removeSite(e.app.globalSites.rows[0])
+			case "password":
+				e.app.savePassword(host, "admin", "secret")
+			}
+			e.settle()
+			views := []*sitesView{&e.app.globalSites}
+			for _, pv := range e.app.projects {
+				views = append(views, &pv.sites)
+			}
+			for _, sv := range views {
+				row, found := findSite(sv.rows, host)
+				switch change {
+				case "remove":
+					if found {
+						t.Fatalf("removed site remains in %+v", sv.rows)
+					}
+				case "save":
+					if !found || row.site.Login != "updated" {
+						t.Fatalf("stale sites %+v", sv.rows)
+					}
+				case "password":
+					if !found || row.password != passwordStored {
+						t.Fatalf("stale credentials %+v", sv.rows)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestRefreshSitesDuringLoad(t *testing.T) {
+	e := newEnv(t)
+	global, _ := registryPaths(e.cfg, "")
+	e.app.loadSites(&e.app.globalSites, "")
+	e.app.bg.Wait() // leave the old result queued, as if a mutation completed during a read
+	if err := deploysites.Save(global, &deploysites.Document{Sites: map[string]deploysites.Site{"new.example": {Login: "admin"}}}); err != nil {
+		t.Fatal(err)
+	}
+	e.app.refreshSites()
+	e.settle()
+	if _, found := findSite(e.app.globalSites.rows, "new.example"); !found {
+		t.Fatal("in-flight read hid the new site")
 	}
 }

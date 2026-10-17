@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -153,9 +154,11 @@ func (a *App) deployTab(c *ui.Context, pv *projectView) {
 	options := append(hosts(pv.sites.rows), customSite)
 	if f.site != "" && !slices.Contains(options, f.site) && pv.sites.loaded {
 		f.site = ""
+		f.password, f.remember = "", false
 	}
 	if f.site == "" && len(options) > 1 {
 		f.site = options[0]
+		f.password, f.remember = "", false
 	}
 	site, saved := findSite(pv.sites.rows, f.site)
 	section(c, "Deploy to a site", "Logs in to the DLE admin panel and installs or updates the plugin.", func() {
@@ -163,6 +166,8 @@ func (a *App) deployTab(c *ui.Context, pv *projectView) {
 			ui.Field(c, "Site", func() {
 				ui.Row(c).Gap(8).Children(func() {
 					if ui.Select(c, &f.site, options).Label("Site").Changed() {
+						f.password, f.remember = "", false
+						site, saved = findSite(pv.sites.rows, f.site)
 						a.rememberDeploySite(pv)
 					}
 					if pv.sites.loading {
@@ -172,9 +177,15 @@ func (a *App) deployTab(c *ui.Context, pv *projectView) {
 			}).Description(siteDescription(site, saved))
 			if f.custom() {
 				ui.Field(c, "Host or admin URL", func() {
-					ui.TextInput(c, &f.target).Placeholder("example.com or https://example.com/admin.php")
+					if ui.TextInput(c, &f.target).Placeholder("example.com or https://example.com/admin.php").Changed() {
+						f.password, f.remember = "", false
+					}
 				})
-				ui.Field(c, "Login", func() { ui.TextInput(c, &f.login) })
+				ui.Field(c, "Login", func() {
+					if ui.TextInput(c, &f.login).Changed() {
+						f.password, f.remember = "", false
+					}
+				})
 			}
 			ui.Field(c, "Plugin", func() {
 				ui.Segmented(c, &f.source, "Build the project", "Ready file")
@@ -294,14 +305,14 @@ func (a *App) deployUpload(pv *projectView) {
 		}
 		pv.deploy.password = ""
 		if f.remember && saved && f.password != "" {
-			a.savePassword(pv, site.host, site.site.Login, f.password)
+			a.savePassword(site.host, site.site.Login, f.password)
 		}
 		a.notify(title+" finished", false)
 	})
 }
 
 // savePassword keeps a password that worked in the credential store.
-func (a *App) savePassword(pv *projectView, host, login, password string) {
+func (a *App) savePassword(host, login, password string) {
 	a.background(func() {
 		err := savePassword(host, login, password)
 		a.post(func() {
@@ -309,7 +320,7 @@ func (a *App) savePassword(pv *projectView, host, login, password string) {
 				a.notify(err.Error(), true)
 				return
 			}
-			a.loadSites(&pv.sites, pv.root)
+			a.refreshSites()
 		})
 	})
 }
@@ -383,10 +394,14 @@ func (a *App) sitesTable(c *ui.Context, sv *sitesView, root string) {
 			a.openSite(siteForm{global: root == ""})
 		}
 		if (ui.Button(c.Key("edit-site"), "Edit…").Disabled(!editable || a.busy()).Clicked() || (edit && editable)) && chosen != nil {
+			adminPath := chosen.site.AdminPath
+			if admin, err := url.Parse(chosen.admin); err == nil {
+				adminPath = strings.TrimPrefix(admin.Path, "/")
+			}
 			a.openSite(siteForm{
 				edit: true, global: chosen.scope == "global",
 				target: chosen.host, login: chosen.site.Login,
-				adminPath: chosen.site.AdminPath, passwordEnv: chosen.site.PasswordEnv,
+				adminPath: adminPath, passwordEnv: chosen.site.PasswordEnv,
 			})
 		}
 		if ui.Button(c.Key("remove-site"), "Remove…").Disabled(!editable || a.busy()).Clicked() && chosen != nil {
@@ -439,14 +454,11 @@ func (a *App) saveSite() {
 		a.siteErr = err.Error()
 		return
 	}
-	root, sv := a.siteRoot()
+	root, _ := a.siteRoot()
 	args, stdin := f.args()
 	a.siteErr = ""
 	a.start("Save site", a.commandDir(root), args, stdin, func(code int, lines []string) {
-		a.loadSites(sv, root)
-		if a.globalSites.loaded && sv != &a.globalSites {
-			a.loadSites(&a.globalSites, "")
-		}
+		a.refreshSites()
 		if code != 0 {
 			a.siteErr = errorLine(lines)
 			return
@@ -457,9 +469,9 @@ func (a *App) saveSite() {
 }
 
 func (a *App) removeSite(r siteRow) {
-	root, sv := a.siteRoot()
+	root, _ := a.siteRoot()
 	a.start("Remove site", a.commandDir(root), removeSiteArgs(r.host, r.scope == "global"), "", func(code int, _ []string) {
-		a.loadSites(sv, root)
+		a.refreshSites()
 		if code == 0 {
 			a.notify("Site removed", false)
 		}

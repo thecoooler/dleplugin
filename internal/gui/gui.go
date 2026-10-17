@@ -43,7 +43,7 @@ type App struct {
 	version      string
 
 	// pending are changes posted from other goroutines, applied by the
-	// next frame; bg counts those goroutines, for tests to wait on.
+	// next frame; bg counts those goroutines, for shutdown and tests.
 	mu      sync.Mutex
 	pending []func()
 	bg      sync.WaitGroup
@@ -110,6 +110,7 @@ type sitesView struct {
 	rows     []siteRow
 	err      error
 	loading  bool
+	reload   bool
 	loaded   bool
 	table    ui.ListState
 	selected int
@@ -246,11 +247,12 @@ func (a *App) start(title, dir string, args []string, stdin string, done func(co
 	a.background(func() {
 		code := a.run(ctx, dir, args, stdin, out)
 		out.Flush()
+		canceled := ctx.Err() != nil
 		cancel()
 		a.post(func() {
 			j.running, j.code, j.duration = false, code, time.Since(j.started)
 			a.job, a.lastJob = nil, j
-			if ctx.Err() != nil && code != 0 {
+			if canceled && code != 0 {
 				a.appendConsole("⚠ " + title + " canceled")
 			} else if code != 0 {
 				a.appendConsole("✖ " + title + " failed (exit code " + strconv.Itoa(code) + ")")
@@ -310,6 +312,7 @@ func (a *App) reload(pv *projectView) {
 // "") off the main thread.
 func (a *App) loadSites(sv *sitesView, root string) {
 	if sv.loading {
+		sv.reload = true
 		return
 	}
 	sv.loading = true
@@ -317,11 +320,43 @@ func (a *App) loadSites(sv *sitesView, root string) {
 		rows, err := loadSites(a.configPath, root)
 		a.post(func() {
 			sv.rows, sv.err, sv.loading, sv.loaded = rows, err, false, true
+			if sv.reload {
+				sv.reload = false
+				a.loadSites(sv, root)
+			}
 			if sv.selected >= len(sv.rows) {
 				sv.selected = len(sv.rows) - 1
 			}
 		})
 	})
+}
+
+// refreshSites reloads effective sites and credentials in every loaded view.
+func (a *App) refreshSites() {
+	a.loadSites(&a.globalSites, "")
+	for _, pv := range a.projects {
+		if pv.sites.loaded || pv.sites.loading {
+			a.loadSites(&pv.sites, pv.root)
+		}
+	}
+}
+
+// shutdown waits for canceled commands to finish their deferred cleanup.
+func (a *App) shutdown(timeout time.Duration) bool {
+	a.cancelJob()
+	done := make(chan struct{})
+	go func() {
+		a.bg.Wait()
+		close(done)
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		return false
+	}
 }
 
 // addProjectDir adds the project containing dir, or offers to create one

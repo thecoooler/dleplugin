@@ -35,7 +35,7 @@ func (a *App) dialogs(c *ui.Context) {
 	}
 	ui.Modal(c, &a.initOpen, func() { a.initDialog(c) }).Width(460)
 	if ui.Modal(c, &a.siteOpen, func() { a.siteDialog(c) }).Width(480).Dismissed() && a.busy() {
-		a.siteOpen = true // the login check is running
+		a.cancelJob()
 	}
 }
 
@@ -179,7 +179,8 @@ func (a *App) siteDialog(c *ui.Context) {
 				ui.Text(c, "Checking the login…").TextColor(c.Theme().TextMuted)
 				ui.Spacer(c)
 			}
-			if ui.Button(c.Key("site-cancel"), "Cancel").Disabled(a.busy()).Clicked() {
+			if ui.Button(c.Key("site-cancel"), "Cancel").Clicked() {
+				a.cancelJob()
 				a.siteOpen = false
 			}
 			if ui.PrimaryButton(c.Key("site-save"), "Check and save").Disabled(a.busy()).Clicked() {
