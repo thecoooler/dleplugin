@@ -18,7 +18,10 @@ var errNotXMLCompatible = errors.New("All strings must be XML compatible: Unicod
 // XML renders the plugin XML for an already expanded info. When
 // info.Build.Split is false every source file is embedded as a create
 // operation.
-func XML(info *manifest.Info, files []manifest.SourceFile, version string) (string, error) {
+func XML(info *manifest.Info, files []manifest.SourceFile, version, upgradeURL string) (string, error) {
+	if err := manifest.ValidateUpgradeURL(upgradeURL); err != nil {
+		return "", err
+	}
 	var b strings.Builder
 	b.WriteString(xmlHeader)
 	b.WriteString("<dleplugin>")
@@ -28,7 +31,7 @@ func XML(info *manifest.Info, files []manifest.SourceFile, version string) (stri
 		{"description", info.Description},
 		{"icon", ""},
 		{"version", version},
-		{"upgradeurl", ""},
+		{"upgradeurl", upgradeURL},
 		{"filedelete", "0"},
 		{"needplugin", strings.Join(info.Dependencies, ",")},
 		{"mnotice", "0"},

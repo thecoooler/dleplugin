@@ -52,6 +52,78 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
+func TestParseUpgradeURL(t *testing.T) {
+	info, err := Parse([]byte("slug: X\nname: X\nupgrade_url: ' https://example.com/u.xml '\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.UpgradeURL != "https://example.com/u.xml" {
+		t.Errorf("UpgradeURL = %q", info.UpgradeURL)
+	}
+	for _, in := range []string{"slug: X\nname: X\n", "slug: X\nname: X\nupgrade_url: ''\n"} {
+		info, err := Parse([]byte(in))
+		if err != nil {
+			t.Errorf("Parse(%q): %v", in, err)
+			continue
+		}
+		if info.UpgradeURL != "" {
+			t.Errorf("Parse(%q) UpgradeURL = %q", in, info.UpgradeURL)
+		}
+	}
+	// A null value is rejected like a null version is.
+	if _, err := Parse([]byte("slug: X\nname: X\nupgrade_url: ~\n")); err == nil || !strings.Contains(err.Error(), "Input should be a valid string") {
+		t.Errorf("Parse null upgrade_url error = %v", err)
+	}
+	c := info.Clone()
+	c.UpgradeURL = "changed"
+	if info.UpgradeURL != "https://example.com/u.xml" {
+		t.Error("Clone shares UpgradeURL")
+	}
+}
+
+func TestParseUpgradeURLErrors(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"slug: X\nname: X\nupgrade_url: http://example.com/u.xml\n", `upgrade_url: invalid upgrade URL "http://example.com/u.xml": scheme must be https`},
+		{"slug: X\nname: X\nupgrade_url: ftp://example.com/u.xml\n", "scheme must be https"},
+		{"slug: X\nname: X\nupgrade_url: example.com/u.xml\n", "scheme must be https"},
+		{"slug: X\nname: X\nupgrade_url: https://\n", "host is empty"},
+		{"slug: X\nname: X\nupgrade_url: 1\n", "scheme must be https"},
+		{"slug: X\nname: X\nupgrade_url: [a]\n", "Input should be a valid string"},
+	}
+	for _, c := range cases {
+		_, err := Parse([]byte(c.in))
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("Parse(%q) error = %v, want containing %q", c.in, err, c.want)
+		}
+	}
+}
+
+func TestValidateUpgradeURL(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"https://example.com/u.xml", ""},
+		{"https://example.com:8443/u.xml?q=1", ""},
+		{"HTTPS://example.com/u.xml", ""},
+		{"http://example.com/u.xml", "scheme must be https"},
+		{"ftp://example.com/u.xml", "scheme must be https"},
+		{"example.com/u.xml", "scheme must be https"},
+		{"https://", "host is empty"},
+		{"https://:443/u.xml", "host is empty"},
+		{"https://user:pw@example.com/u.xml", "user info is not allowed"},
+		{"not a url", "scheme must be https"},
+		{"https://exa mple.com/u.xml", "invalid upgrade URL"},
+	}
+	for _, c := range cases {
+		err := ValidateUpgradeURL(c.in)
+		if c.want == "" && err != nil {
+			t.Errorf("ValidateUpgradeURL(%q) = %v", c.in, err)
+		}
+		if c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("ValidateUpgradeURL(%q) = %v, want containing %q", c.in, err, c.want)
+		}
+	}
+}
+
 func TestParseDependencies(t *testing.T) {
 	info, err := Parse([]byte("slug: X\nname: X\ndependencies:\n  - ExampleDependency\n  - ' Other '\n"))
 	if err != nil {

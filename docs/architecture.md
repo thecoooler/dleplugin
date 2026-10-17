@@ -158,6 +158,8 @@ services for deployment sites, PHPStan, and patch checking.
 - `build` does not require the global config or a DLE installation: building
   is a pure operation. `<version>` in the XML comes from the manifest
   `version` field; `build --version` and `deploy upload --version` override it.
+  `<upgradeurl>` behaves the same from `upgrade_url`/`--upgrade-url`, but only
+  an https link validates.
 - Modules are compiled in; there is no runtime discovery.
 - `deploy` is a command group: `deploy sites` manages host-keyed connections
   and `deploy upload [HOST]` builds/uploads to one site. Global sites live
