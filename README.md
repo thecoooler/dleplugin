@@ -52,17 +52,17 @@ checks. See [issues](https://github.com/thecoooler/dleplugin/issues) for reports
 
 ## Commands
 
-| Command                         | Description                                   |
-| ------------------------------- | --------------------------------------------- |
-| `init [DIR]`                    | Create `dleplugin.yml` in DIR (default: `.`)  |
-| `convert XML_PATH [PLUGIN_PATH]`| Convert a plugin XML file to `dleplugin.yml`  |
-| `static [FILES...]`             | Run PHPStan for the plugin in Docker          |
-| `test [FILES...]`               | Run the plugin's Pest tests against DLE       |
-| `check DLE_DIR...`              | Check the manifest's patches against DLE dirs |
-| `build [--version V]`           | Build the plugin into `dist/`                 |
-| `diff SOURCE1 SOURCE2`          | Compare plugin XML files and projects         |
-| `deploy upload [HOST]`          | Upload the plugin to a DLE site               |
-| `deploy sites`                  | Manage saved deployment sites                 |
+| Command                                 | Description                                   |
+| --------------------------------------- | --------------------------------------------- |
+| `init [DIR]`                            | Create `dleplugin.yml` in DIR (default: `.`)  |
+| `convert XML_PATH [PLUGIN_PATH]`        | Convert a plugin XML file to `dleplugin.yml`  |
+| `static [FILES...]`                     | Run PHPStan for the plugin in Docker          |
+| `test [FILES...]`                       | Run the plugin's Pest tests against DLE       |
+| `check DLE_DIR...`                      | Check the manifest's patches against DLE dirs |
+| `build [--version V] [--upgrade-url U]` | Build the plugin into `dist/`                 |
+| `diff SOURCE1 SOURCE2`                  | Compare plugin XML files and projects         |
+| `deploy upload [HOST]`                  | Upload the plugin to a DLE site               |
+| `deploy sites`                          | Manage saved deployment sites                 |
 
 Global flag: `-v/--verbose`.
 
@@ -152,22 +152,25 @@ dleplugin deploy upload https://example.com/panel.php -u admin --new
 `upload` builds the current plugin and uploads its `dist/` artifact (`.xml`,
 or `.zip` in split mode) through the admin panel, updating the installed plugin
 with the same `<name>`. `--file` uploads a ready artifact without building.
-An unsaved host is also accepted for a one-off connection. Explicit flags
-override saved settings. Without a terminal, HOST and credentials are required;
-a login from a saved site satisfies the `--password-stdin` login requirement.
+The upgrade URL (see `upgrade_url` in `docs/dleplugin-yml.md`) is written to
+the built XML `<upgradeurl>`; only https links are accepted. An unsaved host
+is also accepted for a one-off connection. Explicit flags override saved
+settings. Without a terminal, HOST and credentials are required; a login from
+a saved site satisfies the `--password-stdin` login requirement.
 
-| Flag                 | Description                                              |
-| -------------------- | -------------------------------------------------------- |
-| `HOST`               | saved host, domain, or full admin URL                     |
-| `-f, --file PATH`    | upload a ready `.xml`/`.zip` instead of building         |
-| `--version V`        | version for the built XML (not with `--file`)            |
-| `-u, --login NAME`   | admin login                                              |
-| `--admin-path PATH`  | admin script, default `admin.php` (not with a URL path)  |
-| `--password-env NAME`| environment variable holding the admin password         |
-| `--password-stdin`   | read the admin password from stdin                       |
-| `--new`              | install the plugin when it is not on the site yet        |
-| `--dry-run`          | log in and look up the plugin, upload nothing            |
-| `--insecure`         | skip TLS certificate verification for this invocation   |
+| Flag                  | Description                                                   |
+| --------------------- | ------------------------------------------------------------- |
+| `HOST`                | saved host, domain, or full admin URL                         |
+| `-f, --file PATH`     | upload a ready `.xml`/`.zip` instead of building              |
+| `--version V`         | version for the built XML (not with `--file`)                 |
+| `--upgrade-url U`     | upgrade URL for the built XML; https only (not with `--file`) |
+| `-u, --login NAME`    | admin login                                                   |
+| `--admin-path PATH`   | admin script, default `admin.php` (not with a URL path)       |
+| `--password-env NAME` | environment variable holding the admin password               |
+| `--password-stdin`    | read the admin password from stdin                            |
+| `--new`               | install the plugin when it is not on the site yet             |
+| `--dry-run`           | log in and look up the plugin, upload nothing                 |
+| `--insecure`          | skip TLS certificate verification for this invocation         |
 
 Password precedence: stdin, the selected environment variable, the credential
 store (saved sites only), then a secret prompt. A password typed for a saved

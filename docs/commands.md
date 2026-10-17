@@ -5,13 +5,14 @@ Keep these commands and their names stable.
 Core module:
 
 - `dleplugin init [DIR]`
-- `dleplugin build`
+- `dleplugin build [--version V] [--upgrade-url U]`
 - `dleplugin convert`
 - `dleplugin diff SOURCE1 SOURCE2`
 
 Deploy module:
 
-- `dleplugin deploy upload`
+- `dleplugin deploy upload [HOST]` (with `--version`, `--upgrade-url` and
+  `--file`)
 - `dleplugin deploy sites list/add/show/edit/remove`
 
 Static module:
