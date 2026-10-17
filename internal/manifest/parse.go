@@ -153,6 +153,10 @@ func (d *decoder) info(root *yaml.Node) *Info {
 	info.Name, _ = d.text(mapGet(root, "name"), "name", true)
 	info.Description = d.optText(mapGet(root, "description"), "description")
 	info.Version = d.optText(mapGet(root, "version"), "version")
+	info.UpgradeURL = strings.TrimSpace(d.optText(mapGet(root, "upgrade_url"), "upgrade_url"))
+	if err := ValidateUpgradeURL(info.UpgradeURL); err != nil {
+		d.fail("upgrade_url", err.Error())
+	}
 	if n := mapGet(root, "mount"); n != nil {
 		info.Mount = NormalizePath(d.optText(n, "mount"))
 		if info.Mount != "" {

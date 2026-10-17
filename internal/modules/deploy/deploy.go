@@ -37,6 +37,7 @@ func (module) Commands(rt *app.Runtime) []*cobra.Command {
 type options struct {
 	file          string
 	version       string
+	upgradeURL    string
 	login         string
 	adminPath     string
 	passwordStdin bool
@@ -66,8 +67,11 @@ func uploadCommand(rt *app.Runtime) *cobra.Command {
 		Long: `Upload the plugin to a DLE site through its admin panel.
 
 Without --file the plugin in the current directory is built first and its
-dist/ artifact is uploaded; --version overrides the version from dleplugin.yml. HOST is a domain (https is assumed, http for
-*.localhost) or the full admin URL, e.g. https://example.com/panel.php.
+dist/ artifact is uploaded; --version overrides the version from
+dleplugin.yml and --upgrade-url the upgrade URL (<upgradeurl> in the built
+XML), which must be an https link.
+HOST is a domain (https is assumed, http for *.localhost) or the full admin
+URL, e.g. https://example.com/panel.php.
 Saved sites are read from global and project dleplugin-deploy.yaml files.
 Project records replace global records for the same host. Without HOST,
 saved sites are offered interactively, alongside manual URL entry.
@@ -95,6 +99,7 @@ An explicit admin URL bypasses saved connection settings.`,
 	f := cmd.Flags()
 	f.StringVarP(&o.file, "file", "f", "", "Upload a ready plugin file (.xml or .zip) instead of building")
 	f.StringVar(&o.version, "version", "", "Plugin version written to the built XML (default: version from dleplugin.yml)")
+	f.StringVar(&o.upgradeURL, "upgrade-url", "", "Plugin upgrade URL written to the built XML (default: upgrade_url from dleplugin.yml)")
 	f.StringVarP(&o.login, "login", "u", "", "Admin login")
 	f.StringVar(&o.adminPath, "admin-path", "", "Admin script path (default \"admin.php\")")
 	f.BoolVar(&o.passwordStdin, "password-stdin", false, "Read the admin password from stdin")
@@ -103,11 +108,12 @@ An explicit admin URL bypasses saved connection settings.`,
 	f.BoolVar(&o.dryRun, "dry-run", false, "Log in and look up the plugin without uploading")
 	f.BoolVar(&o.insecure, "insecure", false, "Skip TLS certificate verification")
 	cmd.MarkFlagsMutuallyExclusive("file", "version")
+	cmd.MarkFlagsMutuallyExclusive("file", "upgrade-url")
 	return cmd
 }
 
 func run(cmd *cobra.Command, rt *app.Runtime, o options, host string) error {
-	artifact, err := artifact(rt, o.file, o.version)
+	artifact, err := artifact(cmd, rt, o)
 	if err != nil {
 		return err
 	}
@@ -192,15 +198,16 @@ func run(cmd *cobra.Command, rt *app.Runtime, o options, host string) error {
 	return nil
 }
 
-// artifact returns the file to upload: file resolved against the working
+// artifact returns the file to upload: o.file resolved against the working
 // directory, or the freshly built dist/ artifact of the current plugin with
-// version (the manifest version when empty).
-func artifact(rt *app.Runtime, file, version string) (string, error) {
+// o.version and o.upgradeURL (the manifest values when empty).
+func artifact(cmd *cobra.Command, rt *app.Runtime, o options) (string, error) {
 	wd, err := rt.WorkDir()
 	if err != nil {
 		return "", err
 	}
-	if file != "" {
+	if o.file != "" {
+		file := o.file
 		if !filepath.IsAbs(file) {
 			file = filepath.Join(wd, file)
 		}
@@ -222,10 +229,17 @@ func artifact(rt *app.Runtime, file, version string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	version := o.version
 	if version == "" {
 		version = p.Info().Version
 	}
-	res, err := build.WriteDist(p.Root(), p.Info(), files, version)
+	upgradeURL := p.Info().UpgradeURL
+	if cmd.Flags().Changed("upgrade-url") {
+		if upgradeURL = strings.TrimSpace(o.upgradeURL); upgradeURL == "" {
+			return "", errors.New("--upgrade-url is empty")
+		}
+	}
+	res, err := build.WriteDist(p.Root(), p.Info(), files, version, upgradeURL)
 	if err != nil {
 		return "", err
 	}

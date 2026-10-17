@@ -65,7 +65,7 @@ func sourceXML(source string) (*dlexml.Element, error) {
 	if err != nil {
 		return nil, err
 	}
-	x, err := build.XML(p.Info(), files, "")
+	x, err := build.XML(p.Info(), files, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("build project XML: %w", err)
 	}

@@ -85,7 +85,7 @@ func TestXMLGolden(t *testing.T) {
 				files = append(files, manifest.SourceFile{Src: filepath.Join(dir, "input", f.Src), Mount: f.Mount})
 			}
 			for file, commit := range map[string]string{"build.xml": "abc1234", "build_nocommit.xml": ""} {
-				got, err := XML(info, files, commit)
+				got, err := XML(info, files, commit, "")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -106,7 +106,7 @@ func TestXMLEscapingAndErrors(t *testing.T) {
 	info := manifest.NewInfo()
 	info.Name = "a&b<c>d\r"
 	info.Files.Set("f\"\n&.php", &manifest.FilePatch{Actions: []manifest.Action{{Name: "after", Search: "s", Replace: "r"}}})
-	got, err := XML(info, nil, "")
+	got, err := XML(info, nil, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,26 +123,26 @@ func TestXMLEscapingAndErrors(t *testing.T) {
 
 	info = manifest.NewInfo()
 	info.Dependencies = []string{"ExampleDependency", "Other"}
-	if got, err := XML(info, nil, ""); err != nil || !strings.Contains(got, "<needplugin>ExampleDependency,Other</needplugin>") {
+	if got, err := XML(info, nil, "", ""); err != nil || !strings.Contains(got, "<needplugin>ExampleDependency,Other</needplugin>") {
 		t.Errorf("needplugin: %v %s", err, got)
 	}
 
 	bad := manifest.NewInfo()
 	bad.MySQL.Install = "x]]>y"
-	if _, err := XML(bad, nil, ""); err == nil {
+	if _, err := XML(bad, nil, "", ""); err == nil {
 		t.Error("expected CDATA error")
 	}
 	bad = manifest.NewInfo()
 	bad.Description = "nul\x00"
-	if _, err := XML(bad, nil, ""); err == nil || !strings.Contains(err.Error(), "XML compatible") {
+	if _, err := XML(bad, nil, "", ""); err == nil || !strings.Contains(err.Error(), "XML compatible") {
 		t.Errorf("expected XML compatible error, got %v", err)
 	}
 	bad = manifest.NewInfo()
 	bad.PHP.Delete = "\xff"
-	if _, err := XML(bad, nil, ""); err == nil {
+	if _, err := XML(bad, nil, "", ""); err == nil {
 		t.Error("expected invalid UTF-8 error")
 	}
-	if _, err := XML(manifest.NewInfo(), []manifest.SourceFile{{Src: "/nonexistent", Mount: "a"}}, ""); err == nil || !strings.Contains(err.Error(), "error in plugin file /nonexistent") {
+	if _, err := XML(manifest.NewInfo(), []manifest.SourceFile{{Src: "/nonexistent", Mount: "a"}}, "", ""); err == nil || !strings.Contains(err.Error(), "error in plugin file /nonexistent") {
 		t.Errorf("unexpected err %v", err)
 	}
 }
@@ -182,7 +182,7 @@ func TestWriteDistNonSplit(t *testing.T) {
 	os.WriteFile(stale, []byte("x"), 0o644)
 	os.WriteFile(filepath.Join(root, "README.md"), []byte("# Example\n\ntext\n"), 0o644)
 
-	res, err := WriteDist(root, info, files, "abc1234")
+	res, err := WriteDist(root, info, files, "abc1234", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,9 +238,49 @@ func TestReadmeWrapper(t *testing.T) {
 	}
 }
 
+func TestXMLUpgradeURL(t *testing.T) {
+	info := manifest.NewInfo()
+	info.Name = "Demo"
+	got, err := XML(info, nil, "1.0", "https://example.com/plugin.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "<upgradeurl>https://example.com/plugin.xml</upgradeurl>") {
+		t.Errorf("missing upgradeurl in %s", got)
+	}
+	// An escaped URL stays valid XML.
+	got, err = XML(info, nil, "1.0", "https://example.com/u.xml?code=a&b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "<upgradeurl>https://example.com/u.xml?code=a&amp;b</upgradeurl>") {
+		t.Errorf("upgradeurl not escaped: %s", got)
+	}
+	for _, bad := range []string{"http://example.com/plugin.xml", "ftp://example.com/plugin.xml", "https://"} {
+		if _, err := XML(info, nil, "1.0", bad); err == nil {
+			t.Errorf("accepted upgrade URL %q", bad)
+		}
+	}
+}
+
+func TestWriteDistUpgradeURL(t *testing.T) {
+	root, info, files := newProject(t, false)
+	res, err := WriteDist(root, info, files, "1.0", "https://example.com/plugin.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(res.XMLPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "<upgradeurl>https://example.com/plugin.xml</upgradeurl>") {
+		t.Errorf("xml: %s", data)
+	}
+}
+
 func TestWriteDistSplit(t *testing.T) {
 	root, info, files := newProject(t, true)
-	res, err := WriteDist(root, info, files, "")
+	res, err := WriteDist(root, info, files, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +311,7 @@ func TestWriteDistRequiresHtaccess(t *testing.T) {
 	keep := filepath.Join(root, "dist", "keep.txt")
 	os.MkdirAll(filepath.Dir(keep), 0o755)
 	os.WriteFile(keep, []byte("x"), 0o644)
-	_, err := WriteDist(root, info, files, "")
+	_, err := WriteDist(root, info, files, "", "")
 	if err == nil || err.Error() != "Not found .htaccess, but it is required when build split mode is true" {
 		t.Fatalf("err = %v", err)
 	}
@@ -295,7 +335,7 @@ func TestUnsafeBuildLeavesExistingDist(t *testing.T) {
 			}
 			info.Slug = tc.slug
 			files[0].Mount = tc.mount
-			if _, err := WriteDist(root, info, files, ""); err == nil {
+			if _, err := WriteDist(root, info, files, "", ""); err == nil {
 				t.Fatal("unsafe build accepted")
 			}
 			data, err := os.ReadFile(stale)
