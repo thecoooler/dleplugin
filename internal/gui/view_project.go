@@ -105,7 +105,7 @@ func (a *App) distList(c *ui.Context, pv *projectView) {
 			})
 		}
 	})
-	if ui.Button(c.Key("open-dist"), "Open dist folder").Clicked() {
+	if ui.Button(c.Key("open-dist"), "Open dist folder").AlignSelf(ui.Start).Clicked() {
 		a.openPath(filepath.Join(pv.root, "dist"))
 	}
 }
@@ -486,7 +486,7 @@ func (a *App) checksTab(c *ui.Context, pv *projectView) {
 				ui.TextInput(c, &pv.static.phpVersion).Placeholder("the container's PHP, e.g. 8.1").Width(240)
 			})
 		})
-		if ui.PrimaryButton(c.Key("static"), "Run analysis").Disabled(a.busy()).Clicked() {
+		if ui.PrimaryButton(c.Key("static"), "Run analysis").AlignSelf(ui.Start).Disabled(a.busy()).Clicked() {
 			a.start("Static analysis", pv.root, pv.static.args(), "", nil)
 		}
 	})
@@ -505,7 +505,7 @@ func (a *App) checksTab(c *ui.Context, pv *projectView) {
 				})
 			})
 		})
-		if ui.PrimaryButton(c.Key("test"), "Run tests").Disabled(a.busy()).Clicked() {
+		if ui.PrimaryButton(c.Key("test"), "Run tests").AlignSelf(ui.Start).Disabled(a.busy()).Clicked() {
 			a.start("Tests", pv.root, pv.test.args(), "", nil)
 		}
 	})
