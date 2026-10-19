@@ -60,6 +60,9 @@ internal/modules/check/    the check module: check
 internal/modules/check/internal/check/
                            file patches vs DLE directories: whitespace- and
                            case-insensitive search, missing files, duplicates
+internal/modules/skills/   the skills module: skills list/install/uninstall
+internal/modules/skills/internal/bundle/
+                           embedded skill trees and managed copy lifecycle
 testdata/golden/           golden fixtures (see testdata/README.md)
 ```
 
@@ -97,7 +100,7 @@ func main() {
 }
 
 func modules() []app.Module {
-	return []app.Module{initcmd.Module(), buildcmd.Module(), convertcmd.Module(), diffcmd.Module(), deploy.Module(), static.Module(), test.Module(), check.Module()}
+	return []app.Module{initcmd.Module(), buildcmd.Module(), convertcmd.Module(), diffcmd.Module(), deploy.Module(), static.Module(), test.Module(), check.Module(), skills.Module()}
 }
 ```
 
@@ -111,8 +114,8 @@ Registration rules:
   added); the CLI keeps working;
 - registration results are available via `rt.Modules()` / `rt.ModuleErrors()`;
   module tests must assert that a module registers without errors;
-- top-level commands set `GroupID` to `app.GroupProject`, `app.GroupCheck` or
-  `app.GroupRelease`; the root help lists these groups in that order and the
+- top-level commands set `GroupID` to `app.GroupProject`, `app.GroupCheck`,
+  `app.GroupRelease` or `app.GroupAgents`; the root help lists these groups in that order and the
   commands of a group in registration order. Empty groups are omitted;
   commands without a known group appear under "Additional Commands".
 
@@ -161,6 +164,10 @@ services for deployment sites, PHPStan, and patch checking.
   `<upgradeurl>` behaves the same from `upgrade_url`/`--upgrade-url`, but only
   an https link validates.
 - Modules are compiled in; there is no runtime discovery.
+- `skills` embeds both agent skills via `go:embed`, using the CLI runtime version.
+  Its private service copies complete sibling directories, records SHA-256 hashes
+  and ownership, and preflights both before updates/removal. See
+  [agent skills](agent-skills.md) for paths, conflict rules and source provenance.
 - `deploy` is a command group: `deploy sites` manages host-keyed connections
   and `deploy upload [HOST]` builds/uploads to one site. Global sites live
   next to the global config in `dleplugin-deploy.yaml`; project sites live

@@ -9,6 +9,7 @@ import (
 	"github.com/thecoooler/dleplugin/internal/modules/deploy"
 	"github.com/thecoooler/dleplugin/internal/modules/diffcmd"
 	"github.com/thecoooler/dleplugin/internal/modules/initcmd"
+	"github.com/thecoooler/dleplugin/internal/modules/skills"
 	"github.com/thecoooler/dleplugin/internal/modules/static"
 	"github.com/thecoooler/dleplugin/internal/modules/test"
 )
@@ -19,5 +20,5 @@ func main() {
 
 // modules lists the compiled-in modules in registration order.
 func modules() []app.Module {
-	return []app.Module{initcmd.Module(), buildcmd.Module(), convertcmd.Module(), diffcmd.Module(), deploy.Module(), static.Module(), test.Module(), check.Module()}
+	return []app.Module{initcmd.Module(), buildcmd.Module(), convertcmd.Module(), diffcmd.Module(), deploy.Module(), static.Module(), test.Module(), check.Module(), skills.Module()}
 }

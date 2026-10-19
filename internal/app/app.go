@@ -31,12 +31,14 @@ const (
 	GroupProject = "project"
 	GroupCheck   = "check"
 	GroupRelease = "release"
+	GroupAgents  = "agents"
 )
 
 var groups = []*cobra.Group{
 	{ID: GroupProject, Title: "Plugin project:"},
 	{ID: GroupCheck, Title: "Checks:"},
 	{ID: GroupRelease, Title: "Build and deploy:"},
+	{ID: GroupAgents, Title: "AI agents:"},
 }
 
 // versioned is implemented by modules that have their own version.

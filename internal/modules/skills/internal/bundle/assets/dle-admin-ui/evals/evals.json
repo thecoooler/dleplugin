@@ -1,0 +1,35 @@
+{
+  "skill_name": "dle-admin-ui",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Добавь в существующий модуль engine/inc/catalog.php форму настроек enabled и mode в стиле штатной админки DLE. dleplugin.yml в проекте нет.",
+      "expected_output": "Uses the existing classic module shell without introducing a manifest or DLEPlugin dependency. Uses native panel/settings rows, switch, uniform select, styled save button, escaped output and a server-verified user_hash.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "В PHP view DLEPlugin сделай форму настроек с двумя вкладками: общее и уведомления. Все поля должны сохраняться одной кнопкой.",
+      "expected_output": "Uses Bootstrap 3 nav-tabs-solid and matching tab-pane ids with one active tab. One form wraps both panes, uses data-toggle without custom switching JS, includes escaped user_hash and native buttons, and avoids duplicate echoheader/echofooter.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Добавь в админскую форму DLE одиночный выбор режима и множественный выбор категорий. После AJAX-загрузки обнови варианты обоих списков.",
+      "expected_output": "Uses uniform/Selectpicker for the single select and selectpicker refresh after updates. Uses multiple, array field name and a Chosen hook with explicit initialization for categories, then chosen:updated; does not use uniform or form-control on the multiple select.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "В существующей таблице админки DLE добавь модалку редактирования и действие удаления с подтверждением.",
+      "expected_output": "Uses native table/actions and Bootstrap 3 modal structure with matching unique trigger/id. A single form wraps modal header/body/footer with user_hash; cancel precedes primary save. Deletion uses DLEconfirmDelete and server token validation, with no extra CSS/JS framework.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Исправь кнопки во view DLEPlugin: AdminHTML::button с bg-teal даёт два цвета. Добавь кнопку отмены и крестик закрытия модалки.",
+      "expected_output": "Recognizes appended bg-slate-400 default and uses raw markup or base Core HTML for exactly one background plus btn-sm and btn-raised. Cancel uses bg-grey-400; the native close dismiss control remains close rather than becoming an action button.",
+      "files": []
+    }
+  ]
+}
