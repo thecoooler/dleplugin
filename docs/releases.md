@@ -33,3 +33,13 @@ make the CI test/security/build/image jobs required checks for main. Review
 Dependabot updates for Go, Composer and Actions. Update base image digests,
 PCOV and the pinned govulncheck version explicitly with their smoke checks.
 No workflow bundles or redistributes the DataLife Engine trial.
+
+## Bundled agent skills
+
+The binary embeds both skill directories from
+`internal/modules/skills/internal/bundle/assets/`; no separate download or release
+asset is needed. `skills list` and installation receipts use the same CLI version
+set by ldflags. Update the vendored files and source revision together, preserve
+the documented local fixes, and run `make pipeline` when refreshing them. Existing
+installations update only when the user runs `skills install` again. See
+[agent skills](agent-skills.md) for source provenance and verification limits.

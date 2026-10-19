@@ -17,7 +17,7 @@ func TestHelpOrder(t *testing.T) {
 	for _, module := range registered {
 		names = append(names, module.Name())
 	}
-	if got, want := strings.Join(names, ","), "init,build,convert,diff,deploy,static,test,check"; got != want {
+	if got, want := strings.Join(names, ","), "init,build,convert,diff,deploy,static,test,check,skills"; got != want {
 		t.Fatalf("module order = %s, want %s", got, want)
 	}
 	root := app.NewRootCommand(rt, registered...)
@@ -40,6 +40,7 @@ func TestHelpOrder(t *testing.T) {
 		"Plugin project:", "init", "convert",
 		"Checks:", "static", "test", "check",
 		"Build and deploy:", "build", "diff", "deploy",
+		"AI agents:", "skills",
 		"Additional Commands:", "help",
 		"Flags:",
 	}

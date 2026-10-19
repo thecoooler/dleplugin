@@ -27,6 +27,8 @@ Builds disable CGO by default; set `CGO_ENABLED=1` explicitly if needed.
 ```sh
 dleplugin init Demo --slug Demo --name "Demo Plugin" --description "My first plugin" --namespace 'Acme\Demo'
 cd Demo
+# Optional: install both bundled AI skills for this project
+dleplugin skills install --agent codex  # or --agent claude
 mkdir -p src
 printf '<?php echo "Demo";\n' > src/Main.php
 dleplugin build --version 0.1.0
@@ -63,8 +65,31 @@ checks. See [issues](https://github.com/thecoooler/dleplugin/issues) for reports
 | `diff SOURCE1 SOURCE2`          | Compare plugin XML files and projects         |
 | `deploy upload [HOST]`          | Upload the plugin to a DLE site               |
 | `deploy sites`                  | Manage saved deployment sites                 |
+| `skills list/install/uninstall` | Manage bundled Codex / Claude Code skills      |
 
 Global flag: `-v/--verbose`.
+
+### AI agent skills
+
+The binary includes `dleplugin` and its companion `dle-admin-ui`, versioned
+with the CLI. Installation copies both complete directories, including references,
+without network access. Run from the project directory:
+
+```sh
+dleplugin skills list
+dleplugin skills install --agent codex
+dleplugin skills install --agent claude
+dleplugin skills install --agent codex --global
+# Repeat install after upgrading the CLI to update the skills.
+dleplugin skills uninstall --agent codex
+```
+
+Project installs use `.agents/skills/` for Codex and `.claude/skills/` for
+Claude Code; `--global` uses the corresponding directory under your home.
+`init` does not install skills. Existing modified or unmanaged directories require
+`install --force`, which discards their contents. Uninstall refuses modified or
+unmanaged copies and leaves unrelated skills alone. See
+[installation and maintenance details](docs/agent-skills.md).
 
 ### convert
 
