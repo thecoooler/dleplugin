@@ -132,6 +132,12 @@
       "prompt": "Покажи подготовку deploy на example.com: общий сайт уже сохранён, для проекта нужен другой admin path. Сначала dry-run, затем загрузка готового zip.",
       "expected_output": "Uses project dleplugin-deploy.yaml or sites add/edit with correct scope; explains whole-record override, credential sources, upload --dry-run still builds/authenticates, upload --file artifact.zip without --version. Does not run a real upload without task authorization.",
       "files": []
+    },
+    {
+      "id": 20,
+      "prompt": "Добавь главную админки плагина с самостоятельными разделами Настройки, Реакции и Статистика. Используй существующий DLEPlugin framework и dleplugin.yml.",
+      "expected_output": "Inspects manifest, src and executed bootstrap; keeps packaging and namespace conventions. Explicitly follows companion dle-admin-ui Plugin home: section directory guidance. Home contains only native two-column media links, three sections form two rows with final single entry. Settings/CRUD/statistics render only in their respective routes with back links; tabs may group settings within a section only. Uses admin->url() and endpoint router with AdminResponse, no duplicate raw shell, escapes output and retains CSRF checks for mutations. Runs applicable project checks without publishing or deployment.",
+      "files": []
     }
   ]
 }

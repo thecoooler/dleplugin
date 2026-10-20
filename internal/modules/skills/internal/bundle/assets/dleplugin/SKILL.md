@@ -88,6 +88,8 @@ Set `extras.admin_section: true`, package `src/admin.php` with the matching `eng
 
 For admin markup, forms, controls, tabs, and modals, also use the separate `dle-admin-ui` skill (installed alongside this skill: [dle-admin-ui/SKILL.md](../dle-admin-ui/SKILL.md)). Keep manifest, entrypoint, runtime routing, persistence, and CLI checks in this workflow; the UI skill supplies the native DLE presentation patterns. Load it for tasks that render or change an admin screen.
 
+For a plugin with multiple independent admin sections, follow [Plugin home: section directory](../dle-admin-ui/references/admin-ui.md#plugin-home-section-directory). The home page contains only native DLE section links; settings forms, CRUD tables, statistics, and any internal tabs belong inside the selected section, with a link back to the directory. Preserve the project's classic `section` routing or framework `$admin->url()`/endpoint routing as described there.
+
 ## Completion checklist
 
 - Manifest examples use supported field types; namespaces and source targets agree.

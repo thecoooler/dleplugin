@@ -30,6 +30,18 @@
       "prompt": "Исправь кнопки во view DLEPlugin: AdminHTML::button с bg-teal даёт два цвета. Добавь кнопку отмены и крестик закрытия модалки.",
       "expected_output": "Recognizes appended bg-slate-400 default and uses raw markup or base Core HTML for exactly one background plus btn-sm and btn-raised. Cancel uses bg-grey-400; the native close dismiss control remains close rather than becoming an action button.",
       "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "В классическом engine/inc/myplugin.php сделай главную админки каталогом разделов Настройки, Реакции, Статистика. Внутри должны открываться форма, CRUD и отчёт. Названия могут содержать кавычки и HTML.",
+      "expected_output": "Home without section renders only panel panel-default / panel-heading / list-bordered / row box-section / col-sm-6 media-list media-list-linked / media-link / media-left / media-body, with img-lg section_icon and public/adminpanel/images/default_icon.png. Three titled/described links use section=settings|reactions|stats, laid out two then one with balanced rows. Escapes dynamic text, href and nonempty alt, uses decorative empty alt, allowlists section dispatch and fixed view paths, provides back links, keeps existing raw DLE shell/access checks and puts forms/CRUD/statistics only inside sections. No tabs replacing the directory or extra CSS framework.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "В существующем DLEPlugin-проекте добавь каталог трёх самостоятельных разделов на главной. В настройках нужны две вкладки с общей кнопкой сохранения. Сохрани framework routing.",
+      "expected_output": "Loads the section-directory reference. Root controller returns only directory view via AdminResponse; framework supplies shell. Registers separate home/settings/reactions/stats routes in executed bootstrap, builds all links and back URLs via admin->url(), preserves endpoint routing rather than assuming section dispatch. Native media directory has two entries then one, escaped labels/descriptions/URLs/alt. Tabs and a single CSRF-protected form are inside settings only, CRUD and statistics in their own sections; no extra CSS/JS framework.",
+      "files": []
     }
   ]
 }
