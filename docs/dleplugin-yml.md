@@ -270,6 +270,10 @@ hooks:
 The generated section name is `slug.lower()`. The generated title and
 description come from `name` and `description`.
 
+The SQL does not create an entry file. Alias the admin entry to
+`engine/inc/<lowercase slug>.php` so the section has a page to open, for
+example `admin.php: engine/inc/exampleplugin.php` for `slug: ExamplePlugin`.
+
 ### autoloader
 
 `autoloader` injects an autoloader for classes in `<namespace>\` before
@@ -349,7 +353,7 @@ extras:
     - patches/extra
 
 alias:
-  admin.php: engine/inc/example.php
+  admin.php: engine/inc/exampleplugin.php
   ajax.php: engine/ajax/example.php
 
 files:
@@ -384,7 +388,7 @@ Use these commands from the plugin root while editing a manifest:
 
 ```sh
 dleplugin build
-dleplugin check dist/<slug>.xml
+dleplugin check --file dist/<slug>.xml /path/to/DLE
 ```
 
 The parser reports YAML syntax errors as `dleplugin.yml syntax error` and schema

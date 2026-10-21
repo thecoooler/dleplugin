@@ -153,8 +153,8 @@ sites:
 ```
 
 `url` and `admin_path` are optional when editing YAML directly: the host key
-provides the URL, HTTPS is assumed (`*.localhost` uses HTTP), and `admin.php`
-is the default script. Saved files have permissions `0600`. Passwords are
+provides the URL, HTTPS is assumed (`localhost` and `*.localhost` use HTTP),
+and `admin.php` is the default script. Saved files have permissions `0600`. Passwords are
 never written to the file: `--password-env` stores only an environment variable
 name. With no password variable configured, `DLEPLUGIN_PASSWORD` or a secret
 prompt is used. A password typed or piped during `add`/`edit` is saved in the

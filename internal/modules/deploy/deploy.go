@@ -70,8 +70,8 @@ Without --file the plugin in the current directory is built first and its
 dist/ artifact is uploaded; --version overrides the version from
 dleplugin.yml and --upgrade-url the upgrade URL (<upgradeurl> in the built
 XML), which must be an https link.
-HOST is a domain (https is assumed, http for *.localhost) or the full admin
-URL, e.g. https://example.com/panel.php.
+HOST is a domain (https is assumed, http for localhost and *.localhost) or
+the full admin URL, e.g. https://example.com/panel.php.
 Saved sites are read from global and project dleplugin-deploy.yaml files.
 Project records replace global records for the same host. Without HOST,
 saved sites are offered interactively, alongside manual URL entry.
