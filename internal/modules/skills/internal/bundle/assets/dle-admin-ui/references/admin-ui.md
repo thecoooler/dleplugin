@@ -361,15 +361,15 @@ Used in `editvote.php` and similar:
 ```html
 <form class="form-horizontal" method="post" action="...">
   <div class="panel panel-default">
-    <div class="panel-heading">Title</div>
+    <div class="panel-heading"><div class="panel-title">Title</div></div>
     <div class="panel-body">
       <div class="form-group">
-        <label class="control-label col-md-2 col-sm-3">Label</label>
-        <div class="col-md-10 col-sm-9">
-          <input type="text" dir="auto" name="title" class="form-control width-500" value="...">
-          <i class="help-button visible-lg-inline-block text-primary-600 fa fa-question-circle position-right position-left"
-             data-rel="popover" data-trigger="hover" data-placement="auto right"
-             data-content="Hint text"></i>
+        <label class="control-label col-sm-3" for="f-title">Label<i
+           class="help-button visible-lg-inline-block text-primary-600 fa fa-question-circle position-right"
+           data-rel="popover" data-trigger="hover" data-placement="auto right"
+           data-content="Hint text" aria-hidden="true"></i><span class="sr-only" id="f-title-hint">Hint text</span></label>
+        <div class="col-sm-8">
+          <input type="text" dir="auto" id="f-title" name="title" class="form-control width-500" value="..." aria-describedby="f-title-hint">
         </div>
       </div>
     </div>
@@ -382,6 +382,8 @@ Used in `editvote.php` and similar:
 ```
 
 DLEPlugin `AdminHTML` mirrors this with `formGroup` / `formGroupInfo` / `formGroupField` and `col-sm-3` + `col-sm-8`.
+
+**Field descriptions go into the label's help popover, not into text under the field.** Put the native `help-button` icon inside `<label>` after the label text, as in `googlemap.php` and `rebuild.php`; DLE's admin JS initializes `data-rel="popover"`, so do not call `.popover()` yourself. Escape `data-content`. The icon shows only on large screens (`visible-lg-inline-block`), so repeat the text in an `sr-only` span and reference it from the field's `aria-describedby`. Do not add `help-block` descriptions under fields; reserve a `help-block` for live validation messages. Helper content for the form (for example, template tags) goes in a separate `.panel` below the form, not in a pseudo-field inside it.
 
 ## Controls catalog
 
@@ -543,6 +545,8 @@ Other `data-rel` values initialized in `application.js`:
    data-rel="popover" data-trigger="hover" data-placement="auto right"
    data-content="Explanation"></i>
 ```
+
+In forms, place it inside the field `<label>` with an `sr-only` copy for `aria-describedby`; see [horizontal form](#b-horizontal-form-addedit-entity-screens).
 
 ### Status icons (list columns)
 
@@ -730,6 +734,8 @@ Standard card:
 </div>
 ```
 
+Titled headings use `<div class="panel-title">`, not `<h4 class="panel-title">`: `<div class="panel-heading"><div class="panel-title">Template tags</div></div>`. Put auxiliary blocks (help, template tags for a form) in their own `.panel` below the main one.
+
 Settings sections with internal nav: `panel panel-flat` + optional `panel-body border-bottom` as subsection title (see `options.php`).
 
 DLEPlugin helpers:
@@ -756,6 +762,22 @@ Default `AdminHTML` classes: `form` → `form-horizontal`, `input` → `form-con
 <div class="alert alert-danger alert-styled-left alert-arrow-left alert-component">Error</div>
 <div class="alert alert-success alert-styled-left alert-arrow-left alert-component">Success</div>
 ```
+
+### Notice after saving (flash)
+
+After a successful POST, follow POST/redirect/GET: store the message in the session under a plugin-slug-prefixed key, redirect with 303 to the clean section URL, then read and immediately `unset` it when rendering. Do not pass `&status=saved` in the URL: a reload or a copied link would repeat the notice. DLE admin already starts the session (`dle_session()` → `session_start()`), so do not call `session_start()` yourself. In DLEPlugin prefer `$this->admin->addMessage()` when available.
+
+```php
+// src/admin.php (DLETemplateVars)
+$_SESSION['dletemplatevars_notice'] = $admin->mutate($_POST, ...) . ' Кеш шаблонов DLE очищен.';
+header('Location: ?mod=dletemplatevars', true, 303);
+exit;
+// ... on the page:
+$notice = Admin::text($_SESSION['dletemplatevars_notice'] ?? null);
+unset($_SESSION['dletemplatevars_notice']);
+```
+
+Render `$notice` escaped in a success alert; it appears once and a page reload does not repeat it.
 
 In-page toast (no full reload):
 
@@ -977,6 +999,8 @@ $('select[name="storage[type]"]').on('change', function () {
 - A standalone “Back to list” link replacing native parent/current breadcrumbs on add/edit pages.
 - `echoheader`/`echofooter` inside DLEPlugin controllers that already wrap `AdminResponse` (double chrome).
 - Inline styles for colors when a `bg-*` / `text-*` class exists.
+- Field descriptions as `help-block` text under fields instead of a label help popover; `<h4 class="panel-title">` instead of `<div class="panel-title">`.
+- Success notices passed as `&status=saved` in the redirect URL instead of a one-time session flash.
 - Loading jQuery again (already in admin).
 
 ## Quick checklist before finishing admin UI work
@@ -997,3 +1021,5 @@ $('select[name="storage[type]"]').on('change', function () {
 - [ ] Links built via `$admin->url()` in DLEPlugin projects
 - [ ] No extra CSS framework unless requested
 - [ ] Visual parity with a nearby core screen (`options`, `social`, `editvote`, `storage`)
+- [ ] Field descriptions are label help popovers with escaped `data-content` and an `sr-only` copy referenced by `aria-describedby`; panel titles use `<div class="panel-title">`
+- [ ] Save notices use a slug-prefixed session flash, a 303 redirect to the clean URL, and `unset` after reading
