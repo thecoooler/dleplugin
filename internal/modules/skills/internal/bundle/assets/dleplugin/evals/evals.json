@@ -132,6 +132,12 @@
       "prompt": "Покажи подготовку deploy на example.com: общий сайт уже сохранён, для проекта нужен другой admin path. Сначала dry-run, затем загрузка готового zip.",
       "expected_output": "Uses project dleplugin-deploy.yaml or sites add/edit with correct scope; explains whole-record override, credential sources, upload --dry-run still builds/authenticates, upload --file artifact.zip without --version. Does not run a real upload without task authorization.",
       "files": []
+    },
+    {
+      "id": 20,
+      "prompt": "В DLETemplateVars добавление и редактирование переменной надо перенести со списка на отдельные страницы. Прочитай проект и внеси правки с проверкой.",
+      "expected_output": "Loads companion dle-admin-ui and inspects existing integration before choosing raw DLE or framework shell. Keeps linked parent-list and active current breadcrumbs, one automatic Home and escaped dynamic labels. Uses the installed AdminResponse breadcrumb contract when applicable, without duplicate echoheader/footer; validates save CSRF and runs relevant CLI checks. Does not replace native breadcrumbs with only a Back to list link.",
+      "files": []
     }
   ]
 }

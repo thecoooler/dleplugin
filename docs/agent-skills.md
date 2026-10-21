@@ -88,6 +88,18 @@ No absolute source path is used at runtime.
 
 Local adaptations relative to that revision:
 
+- Native breadcrumbs are explicit workflow and completion requirements for
+  list/add/edit admin pages, with complete classic-module shell examples.
+  DLE's `echoheader()` implementation confirms URL-keyed parents, an empty-key
+  active item, automatic Home and unescaped labels/URLs; `storage.php` demonstrates
+  the hierarchy. DLEPlugin guidance keeps header/footer ownership in the wrapper
+  and requires checking its installed breadcrumb contract rather than assuming
+  the raw DLE array is an `AdminResponse` constructor format.
+- The UI CSRF example now escapes the hidden token and rejects missing, empty,
+  non-string and mismatched tokens before mutation. The reference calls out raw
+  HTML slots in `showRow()` and initialization of controls inserted after page
+  load, checked against DLE's `storage.php` and `application.js`. Button sizing is
+  identified as a skill convention; role colors are recommendations.
 - The HTTP example rejects `body === false` and status `0` before checking HTTP
   error statuses. Confirmed against local framework `Core/HTTP.php`.
 - CRUD guidance explicitly requires save/delete CSRF validation, escaped tokens
@@ -105,9 +117,12 @@ Local adaptations relative to that revision:
 Go tests exercise both agents and scopes with temporary HOME/project directories:
 installation, version updates, changed/foreign files, force replacement, safe
 removal, symlinks, unchanged unrelated skills and relative Markdown references.
+The bundle update test compares both entire installed trees against the embedded
+assets, including references and eval prompts.
 Real user-global skills are never used by these tests.
 
-Upstream `evals/evals.json` files are included as scenario prompts. They have no
+`evals/evals.json` files include upstream and local regression scenario prompts
+for navigation and dynamic controls. They have no
 project fixtures and are not evidence that PHP tasks pass in a real DLE project.
 This integration does not implement an eval harness, benchmark agent behavior or
 run the PHP examples against a live DLE site.
