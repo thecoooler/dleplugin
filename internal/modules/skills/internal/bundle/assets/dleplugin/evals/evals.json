@@ -144,6 +144,48 @@
       "prompt": "В DLETemplateVars добавление и редактирование переменной надо перенести со списка на отдельные страницы. Прочитай проект и внеси правки с проверкой.",
       "expected_output": "Loads companion dle-admin-ui and inspects existing integration before choosing raw DLE or framework shell. Keeps linked parent-list and active current breadcrumbs, one automatic Home and escaped dynamic labels. Uses the installed AdminResponse breadcrumb contract when applicable, without duplicate echoheader/footer; validates save CSRF and runs relevant CLI checks. Does not replace native breadcrumbs with only a Back to list link.",
       "files": []
+    },
+    {
+      "id": 22,
+      "prompt": "В dleplugin.yml заданы version: 1.4.0 и upgrade_url: https://example.com/demo.xml. Собери релиз 2.0.0, не меняя манифест, и объясни, какие значения попадут в XML.",
+      "expected_output": "Runs dleplugin build --version 2.0.0; the flag overrides only the XML <version>, while <upgradeurl> still comes from upgrade_url. Does not edit the manifest. Notes that --upgrade-url is a per-run override, only absolute https URLs are accepted, and an empty flag cannot clear the field.",
+      "files": []
+    },
+    {
+      "id": 23,
+      "prompt": "Загрузи готовый dist/demo.zip через deploy upload на example.com и объясни, можно ли одновременно указать --version или --upgrade-url. Отдельно уточни схему для localhost.",
+      "expected_output": "Uses deploy upload example.com --file dist/demo.zip without rebuilding. States that --file is mutually exclusive with --version and --upgrade-url, so those flags cannot be combined. Bare localhost and *.localhost default to HTTP; other hosts default to HTTPS unless an explicit URL is given.",
+      "files": []
+    },
+    {
+      "id": 24,
+      "prompt": "Проверь dist/demo.xml на совместимость с двумя распакованными DLE и объясни, какие операции реально ищутся, а какие пропускаются.",
+      "expected_output": "Runs dleplugin check --file dist/demo.xml DLE_DIR1 DLE_DIR2. Positional arguments are DLE roots, not the artifact. Only before/after/replace operations are searched; create and other action names are skipped. Reports failures per directory and exit code; does not claim PHP/SQL or runtime validation.",
+      "files": []
+    },
+    {
+      "id": 25,
+      "prompt": "После перехода тестового окружения на Pest 5 нужно обновить снапшоты. Где они лежат, как их обновить и почему тесты видят plugin templates, .env и conftest.php?",
+      "expected_output": "Uses dleplugin test --update-snapshots (or -u); snapshots use Pest's standard tests/.pest/snapshots/<test path>/ layout. Explains that test links the plugin's templates/ contents into the trial templates/Default/ and links plugin-root .env and conftest.php when present. Does not invent a test --dependency-root flag; test-only dependencies go through dletest.yml.",
+      "files": []
+    },
+    {
+      "id": 26,
+      "prompt": "В dlestatic.yml нужно игнорировать сообщение PHPStan регуляркой с lookahead. Почему шаблон не работает и что делать?",
+      "expected_output": "Explains that ignoreErrors are Go regular expressions (RE2) without lookarounds. Rewrites the pattern without lookaround or uses excludePaths/analyse instead. Keeps static in Docker with the image PHP 8.4 unless --php-version changes analysis assumptions.",
+      "files": []
+    },
+    {
+      "id": 27,
+      "prompt": "Включи extras.admin_section для плагина со slug Demo, name Bob's tools и description с апострофом. Что появится в админке и в SQL?",
+      "expected_output": "Sets extras.admin_section true and aliases src/admin.php to engine/inc/demo.php. The generated INSERT IGNORE/delete statements use lowercase slug demo; title comes from name, descr from description, icon is empty and allow_groups is all. Metadata is SQL-escaped and appended to enable/disable/delete without replacing existing hooks.",
+      "files": []
+    },
+    {
+      "id": 28,
+      "prompt": "После добавления di.bindings и extras.routes сборка проходит, но маршруты и зависимости не работают. Что на самом деле делает CLI и как это исправить?",
+      "expected_output": "Explains that the CLI ignores di.bindings and extras.routes; unknown or misspelled manifest keys are silently ignored and a successful build is not proof. Registers DLEPlugin::bind and Router::add in executed PHP before resolution/route-cache construction, verifies the bootstrap runs, and inspects generated XML/runtime behavior instead of trusting YAML.",
+      "files": []
     }
   ]
 }

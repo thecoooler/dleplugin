@@ -41,8 +41,10 @@ Reference sources in the CMS tree:
 
 1. **Reuse DLE classes** (`panel`, `form-control`, `btn bg-teal`, `switch`, `uniform`). Do not invent a parallel design system.
 2. **Escape output**: titles, labels, option text, and user data go through `htmlspecialchars(..., ENT_QUOTES, 'UTF-8')` (or equivalent) before echo.
-3. **Include and validate CSRF** on POST forms and mutating GET links. For example, render a hidden token in a PHP view:
+3. **Include and validate CSRF** on POST forms and mutating GET links. In a view included from a function or method, declare the global or use `$GLOBALS`:
    ```php
+   global $dle_login_hash;
+
    echo '<input type="hidden" name="user_hash" value="'
        . htmlspecialchars((string) $dle_login_hash, ENT_QUOTES, 'UTF-8') . '">';
    ```
@@ -55,6 +57,11 @@ Reference sources in the CMS tree:
    }
    ```
    A confirmation dialog and `Form::isSubmitAndValid()` do not replace this server check.
+
+   Common wrong/right pairs:
+   - Wrong: rely only on `DLEconfirmDelete`, or render a hidden token without validating it. Right: validate the token before mutation.
+   - Wrong: treat `Form::isSubmitAndValid()` as CSRF protection. Right: bind with it, then run the `hash_equals()` check.
+   - Wrong: pass request data as `$optional`/`$attrs` to the helper snippets below. Right: treat those arguments as trusted HTML and build or escape dynamic attributes yourself.
 4. **Prefer DLEPlugin views/helpers** when the project already uses the framework; fall back to raw HTML only when you need a custom layout.
 5. **Do not load extra CSS/JS frameworks** unless the user explicitly asks. Admin already loads Font Awesome, Bootstrap-style panels, Selectpicker (via `uniform` class), Switchery (`.switch`), Chosen, datetimepicker, popovers.
 
@@ -424,6 +431,8 @@ function makeCheckBox(string $name, $selected, string $optional = ''): string
 }
 ```
 
+`$optional` is inserted as trusted HTML for attributes such as `disabled` or `data-*`; never pass request-derived text.
+
 On save, unchecked boxes are absent from POST — default to `0`:
 
 ```php
@@ -471,6 +480,8 @@ function makeDropDown(array $options, string $name, $selected, string $attrs = '
     return $html.'</select>';
 }
 ```
+
+`$attrs` is also trusted HTML; escape any dynamic attribute values before concatenating them.
 
 Inline action select (mass action paired with a button):
 
@@ -598,7 +609,7 @@ Buttons that open a modal use either `data-toggle="modal"` (see [Modals](#modals
 
 ## Modals
 
-DLE admin uses **Bootstrap 3 modals**: `modal fade` → `modal-dialog` (add `modal-lg` for wide content) → `modal-content`. Modals are emitted once (usually at the end of the page output), hidden by default, and opened by a trigger elsewhere on the page. Real references: `engine/inc/editnews.php` (advanced search, lines 429–585), `blockip.php` (add form, lines 175–218), `categories.php`, `wordfilter.php`, `plugins.php`, `editusers.php`.
+DLE admin uses **Bootstrap 3 modals**: `modal fade` → `modal-dialog` (add `modal-lg` for wide content) → `modal-content`. Modals are emitted once (usually at the end of the page output), hidden by default, and opened by a trigger elsewhere on the page. Real references: `engine/inc/editnews.php` (advanced search), `blockip.php` (add form), `categories.php`, `wordfilter.php`, `plugins.php`, `editusers.php`.
 
 ### Trigger
 
@@ -926,7 +937,7 @@ Header examples:
 
 ## DLEPlugin-first workflow for plugin admin UI
 
-1. Ensure `extras.admin_section: true`, `src/admin.php`, and an alias to `engine/inc/<lowercase-slug>.php` when working in a dleplugin project. Use the companion `dleplugin` skill for manifest and packaging details when available; classic `engine/inc` modules do not need this manifest setup.
+1. Ensure `extras.admin_section: true`, `src/admin.php`, and an alias to `engine/inc/<lowercase-slug>.php` when working in a dleplugin project. Use the installed companion `dleplugin` skill for manifest and packaging details; classic `engine/inc` modules do not need this manifest setup.
 2. Register routes on `$app->admin`; implement controllers extending `Core\Controller`.
 3. Prefer:
    - **Settings**: Model + `Form` + a custom view containing the escaped CSRF token (stock `@form` requires adaptation)
@@ -958,7 +969,7 @@ echo HTML::form(['method' => 'post', 'action' => $saveUrl], [
 ]);
 ```
 
-The framework does not inject this token or validate it. Validate the POST token before saving; `Form::isSubmitAndValid()` alone does not do that. With a nonstandard mount, call `$admin->addViewsFolder()` with the installed absolute path to the plugin Views directory before rendering. The companion `dleplugin` skill covers framework controllers, persistence, and CLI checks when available.
+The framework does not inject this token or validate it. Validate the POST token before saving; `Form::isSubmitAndValid()` alone does not do that. With a nonstandard mount, call `$admin->addViewsFolder()` with the installed absolute path to the plugin Views directory before rendering. The installed companion `dleplugin` skill covers framework controllers, persistence, and CLI checks.
 
 When emitting raw HTML in views, use the **exact class names** from this reference so skins stay consistent after DLE updates.
 
