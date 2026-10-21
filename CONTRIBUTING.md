@@ -1,6 +1,6 @@
 # Contributing
 
-Use Go 1.27.2 or newer and keep changes focused. Build from a clone with
+Use Go 1.27.3 or newer and keep changes focused. Build from a clone with
 `make build`; verify changes with `make pipeline` and `go test -race ./...`.
 Docker is required only for plugin PHP analysis/tests and tool-image checks.
 No PHP installation is needed for the Go test suite.

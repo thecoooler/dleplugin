@@ -213,7 +213,7 @@ services for deployment sites, PHPStan, and patch checking.
   paths must stay within the DLE root. Local writes use `os.Root` to prevent
   symlink traversal outside their destination.
 - Names/descriptions containing SQL special characters are encoded safely.
-- Release builds require patched Go 1.27.2+ and disable CGO by default.
+- Release builds require patched Go 1.27.3+ and disable CGO by default.
   The module path is `github.com/thecoooler/dleplugin`.
 - `make golden` updates generated expectations from committed inputs through
   Go tests; see `testdata/README.md`.
