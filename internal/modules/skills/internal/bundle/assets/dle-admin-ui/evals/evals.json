@@ -42,6 +42,24 @@
       "prompt": "В существующем DLEPlugin-проекте добавь каталог трёх самостоятельных разделов на главной. В настройках нужны две вкладки с общей кнопкой сохранения. Сохрани framework routing.",
       "expected_output": "Loads the section-directory reference. Root controller returns only directory view via AdminResponse; framework supplies shell. Registers separate home/settings/reactions/stats routes in executed bootstrap, builds all links and back URLs via admin->url(), preserves endpoint routing rather than assuming section dispatch. Native media directory has two entries then one, escaped labels/descriptions/URLs/alt. Tabs and a single CSRF-protected form are inside settings only, CRUD and statistics in their own sections; no extra CSS/JS framework.",
       "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "В engine/inc/templatevars.php вынеси добавление и редактирование переменной из списка на отдельные страницы. Сохрани штатную навигацию DLE; имя переменной может содержать кавычки и HTML.",
+      "expected_output": "Uses echoheader second-argument arrays for list/add/edit, with linked parent list and final empty-key active label. Does not substitute a Back to list link or add Home manually. Escapes the dynamic edit label and URL attributes, preserves one header/footer, and checks list → add/edit → parent navigation.",
+      "files": []
+    },
+    {
+      "id": 9,
+      "prompt": "В существующем DLEPlugin admin UI вынеси создание и редактирование записей на отдельные маршруты. Сейчас контроллер возвращает AdminResponse.",
+      "expected_output": "Inspects the installed AdminResponse/Admin breadcrumb contract before choosing its format. Uses admin->url for parent links, supplies parent/current native breadcrumbs with appropriate escaping, and leaves header/footer to the wrapper. Checks active current item and single automatic Home; does not add raw echoheader to views.",
+      "files": []
+    },
+    {
+      "id": 10,
+      "prompt": "После AJAX-загрузки формы настройки DLE новый переключатель и одиночный select остаются обычными HTML-контролами. Исправь и проверь повторную загрузку.",
+      "expected_output": "Initializes new switches with Switchery and new uniform selects with selectpicker, scoped to inserted elements without initializing existing instances twice. Distinguishes initialization from refreshing options on existing widgets.",
+      "files": []
     }
   ]
 }

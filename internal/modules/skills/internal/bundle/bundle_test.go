@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"testing/fstest"
 
 	"github.com/yuin/goldmark"
@@ -53,10 +54,22 @@ func TestUpdateOlderBundle(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "obsolete.md")); !os.IsNotExist(err) {
 		t.Fatal("obsolete file retained", err)
 	}
-	want, _ := assets.ReadFile("assets/dleplugin/SKILL.md")
-	got, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
-	if err != nil || string(got) != string(want) {
-		t.Fatal("old content not updated", err)
+	for _, name := range Names() {
+		source, err := fs.Sub(assets, "assets/"+name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := snapshot(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := snapshot(os.DirFS(filepath.Join(root, name)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: installed tree differs from embedded bundle", name)
+		}
 	}
 }
 

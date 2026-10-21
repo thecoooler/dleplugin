@@ -111,14 +111,14 @@ final class SettingsController extends Controller
             'saveUrl' => $this->admin->url('/settings'),
         ]);
 
-        return new AdminResponse($content, [
-            ['label' => 'Settings', 'url' => $this->admin->url('/settings')],
-        ]);
+        return new AdminResponse($content);
     }
 }
 ```
 
 Admin route paths are matched against `$_REQUEST['endpoint']`. Build admin links with `$this->admin->url('/path')` instead of hard-coding `?mod=...&endpoint=...`.
+
+The example above shows response wrapping only. For nested list/add/edit pages, also configure native breadcrumbs with a linked parent and an active current item. Inspect the installed `Core/AdminResponse.php` and `Core/Admin.php` for the breadcrumb contract and escaping; do not assume the raw `echoheader()` array is its constructor format. Follow the companion's [navigation rules and examples](../../dle-admin-ui/references/admin-ui.md#native-breadcrumbs-for-list-add-and-edit-pages). The wrapper already emits header/footer; controllers and views must not call them again.
 
 `$admin->render('name', $params)` loads PHP views from the plugin `Views/` folder. A template name starting with `@` loads a shared framework view, for example `@form` or `@model/main`. These stock views require CSRF and output-escaping adaptations before use with user data; see [Models and forms](#models-and-forms).
 
@@ -396,6 +396,8 @@ Before finishing framework-based plugin work, confirm:
 - the plugin slug, namespace and mount were read/resolved from `dleplugin.yml`;
 - framework classes are imported from `iCooLER\DLEPlugin`, not copied into plugin code;
 - admin routes use `$admin->add()` and admin links use `$admin->url()`;
+- nested admin pages preserve native parent/current breadcrumbs, without duplicate shell calls;
+- save/delete reject missing or invalid CSRF tokens before persistence; custom views include escaped tokens;
 - frontend routes return `SiteResponse` when content, SEO, or breadcrumbs should be handled by DLEPlugin;
 - template output containing user content is escaped by the plugin before replacement;
 - SQL values use helper placeholders or structured `where` arrays;
