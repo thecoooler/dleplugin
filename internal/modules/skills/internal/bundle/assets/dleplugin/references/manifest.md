@@ -1,13 +1,15 @@
 # Manifest and build behavior
 
-Checked against `internal/manifest/`, `internal/plugin/`, `internal/build/`, `docs/dleplugin-yml.md`, and golden fixtures in the Go CLI at `d9bce4fdf75ebc5dcff2380641db2cb98eb663eb`.
+Checked against `internal/manifest/`, `internal/plugin/`, `internal/build/`, `docs/dleplugin-yml.md`, and golden fixtures in the Go CLI at `a738aa05966a6d037a46e408dbe110745bde8652` (2026-10-21).
 
 ## Fields and defaults
 
 | Field | Shape / behavior |
 |---|---|
 | `slug`, `name` | Required strings; slug is a nonempty single filename component |
-| `description`, `version` | Optional strings, empty by default |
+| `description` | Optional string, empty by default; used as the generated admin-section description |
+| `version` | Optional string, empty by default; written to the XML `<version>` |
+| `upgrade_url` | Optional absolute https URL, empty by default; written to the XML `<upgradeurl>` |
 | `namespace` | PHP namespace without leading/trailing backslashes |
 | `mount` | Directory relative to DLE root for default `src/` targets |
 | `dependencies` | List of other plugins' display names; emitted comma-separated into DLE `needplugin`; commas in names rejected |
@@ -20,6 +22,16 @@ Checked against `internal/manifest/`, `internal/plugin/`, `internal/build/`, `do
 | `mysql`, `php` | Mappings of lifecycle hook names to string bodies |
 
 Unknown fields are ignored, including `di` and `extras.routes`; valid YAML is not proof that a directive does anything. See [di-bindings.md](di-bindings.md) and [extras-routes.md](extras-routes.md) for PHP registration instead.
+
+## Version and upgrade URL
+
+`version` is optional and defaults to an empty XML `<version>`. `upgrade_url`
+is optional and defaults to an empty `<upgradeurl>`. `build` writes both values,
+and `deploy upload` does the same when it builds (without `--file`); their
+`--version` and `--upgrade-url` flags override the manifest for one run. `upgrade_url` is trimmed and must be an absolute https URL
+with a host and no user info. An invalid manifest value fails loading even when
+a valid flag is supplied. `--upgrade-url ""` is an error and cannot clear the
+field; remove `upgrade_url` from the manifest to build without it.
 
 ## Namespace, mount, alias
 
@@ -89,7 +101,7 @@ php:
     clear_cache();
 ```
 
-Both sections support `install`, `upgrade`, `enable`, `disable`, `delete`. Bodies are strings; use one literal block for multiple statements. Missing hooks become empty. DLE receives `{prefix}` unchanged. Keep install/upgrade schema changes in these hooks rather than hiding them in entry files. `extras.admin_section` appends generated SQL without replacing existing bodies; the section name is lowercase slug.
+Both sections support `install`, `upgrade`, `enable`, `disable`, `delete`. Bodies are strings; use one literal block for multiple statements. Missing hooks become empty. DLE receives `{prefix}` unchanged. Keep install/upgrade schema changes in these hooks rather than hiding them in entry files. `extras.admin_section` appends generated SQL without replacing existing bodies. The generated section uses the lowercase slug for `name`, `name`/`description` for `title`/`descr`, an empty icon, and `allow_groups = 'all'`.
 
 ## Build artifacts
 
@@ -102,4 +114,4 @@ The command rebuilds `dist/`. Default output is `dist/<slug>.xml` with `src/` fi
 
 With `build.split: true`, `src/.htaccess` is required. Output is `dist/<slug>.zip`: XML named `<slug>.xml` plus source files at their resolved mount/alias targets. Source files are omitted from XML; explicit `files` and extras remain there. The standalone XML is removed from `dist/` after archiving. This is packaged source distribution, not a build that drops source files entirely.
 
-`check --file dist/<slug>.xml DLE_DIR` checks a ready artifact (use `.zip` for split builds). Bare `check dist/<slug>.xml` is wrong: positional arguments are DLE directories. `check` does not execute PHP/SQL or validate runtime DI/routes.
+`check --file dist/<slug>.xml DLE_DIR` checks a ready artifact (use `.zip` for split builds). Bare `check dist/<slug>.xml` is wrong: positional arguments are DLE directories. Only `before`, `after` and `replace` actions are searched; `create` and any other action name are skipped. `check` does not execute PHP/SQL or validate runtime DI/routes.

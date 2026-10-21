@@ -60,6 +60,30 @@
       "prompt": "После AJAX-загрузки формы настройки DLE новый переключатель и одиночный select остаются обычными HTML-контролами. Исправь и проверь повторную загрузку.",
       "expected_output": "Initializes new switches with Switchery and new uniform selects with selectpicker, scoped to inserted elements without initializing existing instances twice. Distinguishes initialization from refreshing options on existing widgets.",
       "files": []
+    },
+    {
+      "id": 11,
+      "prompt": "В классическом engine/inc/catalog.php удаление записи сделано ссылкой с DLEconfirmDelete. Этого достаточно? Покажи безопасный серверный вариант.",
+      "expected_output": "No. DLEconfirmDelete is only a client-side confirmation. The mutating link includes an escaped user_hash and the handler validates it from $_GET against $dle_login_hash, rejecting missing, non-string, empty or mismatched values before deletion. No extra JS framework or hand-built confirm modal.",
+      "files": []
+    },
+    {
+      "id": 12,
+      "prompt": "В DLEPlugin view формы настроек две вкладки и одна кнопка сохранения. Куда добавить user_hash и как проверить его на сервере?",
+      "expected_output": "One form wraps both tab panes and all inputs, with an escaped hidden user_hash. The view uses global $dle_login_hash or $GLOBALS because included views do not inherit globals. The controller validates the token with hash_equals before saving; Form::isSubmitAndValid and a confirmation dialog do not replace that check. AdminResponse supplies the shell.",
+      "files": []
+    },
+    {
+      "id": 13,
+      "prompt": "В classic-модуле есть helper-функции makeCheckBox и makeDropDown. name и option-значения приходят из запроса, а $optional/$attrs формируются кодом плагина. Что экранировать?",
+      "expected_output": "Escapes name, option value, label and selected comparisons as needed; $optional and $attrs are trusted HTML fragments and must never receive request-derived text. If attributes must be dynamic, build them from escaped values. Uses native switch/uniform classes and initializes dynamically inserted controls.",
+      "files": []
+    },
+    {
+      "id": 14,
+      "prompt": "В DLEPlugin используем Admin\\ModelController и штатные @form/@model/main без изменений. Сохранение и удаление работают. Можно ли оставить как есть?",
+      "expected_output": "No. Stock save/delete do not verify user_hash, stock form and model views do not add the token, and getValue()/model list output can emit raw strings or labels. Adds escaped tokens to custom forms and mutating links, validates before persistence, uses custom escaped list views, keeps trusted icon markup separate, and allowlists sort fields.",
+      "files": []
     }
   ]
 }

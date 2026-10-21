@@ -1,6 +1,6 @@
 # CLI commands and tool configuration
 
-Use `dleplugin --help` and `<command> --help` to check the installed version. This reference was checked against the Go CLI source at commit `d9bce4fdf75ebc5dcff2380641db2cb98eb663eb` (2026-10-17), especially `docs/commands.md`, `README.md`, `internal/modules/`, and `internal/config/`. Older Python-era configuration features are not necessarily supported.
+Use `dleplugin --help` and `<command> --help` to check the installed version. This reference was checked against the Go CLI source at commit `a738aa05966a6d037a46e408dbe110745bde8652` (2026-10-21), especially `docs/commands.md`, `README.md`, `internal/modules/`, and `internal/config/`. Older Python-era configuration features are not necessarily supported.
 
 ## Commands and flags
 
@@ -23,6 +23,8 @@ Global: `-v, --verbose`. Root `dleplugin --version` prints the CLI version (dist
 | `skills list` | lists both bundled skills and CLI version |
 | `skills install` | `--agent codex\|claude` (required), `--global`, `--force` |
 | `skills uninstall` | `--agent codex\|claude` (required), `--global` |
+
+`deploy upload --file` is mutually exclusive with `--version` and `--upgrade-url`.
 
 `init` writes only the manifest, creating DIR if needed; create `src/` yourself. Supply metadata flags to avoid prompts in automation. Namespace defaults to slug when it is a valid PHP namespace; a hyphenated slug needs an explicit namespace. Existing manifests are not overwritten.
 
@@ -95,7 +97,7 @@ ignoreErrors:
   - 'Call to an undefined method .*::legacy\(\)'
 ```
 
-Dependencies here are independent of `dleplugin.yml.dependencies`. Each name resolves first in global `static.dependencies`, then as `<dependency-root>/<name>`; its `src/` becomes an include path. Missing dependencies produce warnings. `--dependency-root` replaces configured roots. `excludePaths` requires `analyse`. `ignoreErrors` contains regular expressions; `strict` enables PHPStan strict rules.
+Dependencies here are independent of `dleplugin.yml.dependencies`. Each name resolves first in global `static.dependencies`, then as `<dependency-root>/<name>`; its `src/` becomes an include path. Missing dependencies produce warnings. `--dependency-root` replaces configured roots. `excludePaths` requires `analyse`. `ignoreErrors` contains Go regular expressions (RE2 syntax; lookarounds are not supported); `strict` enables PHPStan strict rules.
 
 Exit 1 on findings or analyser failure. `--json` contains `messages`, `errors`, `warnings`, `count`; messages/count group by distinct file/line and JSON keeps the first message there. `--count` takes precedence when both output flags are given; a provider error can yield count 0 but still exit 1. Static reads slug without full manifest validation; use build for that.
 
@@ -107,7 +109,7 @@ dleplugin check /path/to/DLE
 dleplugin check --file dist/demo.xml /path/to/DLE /path/to/another-DLE
 ```
 
-Positional arguments are DLE directories, never the plugin artifact. Reads manifest patches including generated extras/extra configs or `--file` XML/ZIP. Checks search text against the supplied DLE tree, ignoring whitespace/case. Missing files/searches and empty searches fail; duplicate matches warn. Create operations are not checked against existing files. Exit 1 if any DLE directory fails. This is a compatibility check, not PHP/SQL execution or proof of runtime behavior.
+Positional arguments are DLE directories, never the plugin artifact. Reads manifest patches including generated extras/extra configs or `--file` XML/ZIP. Checks search text against the supplied DLE tree, ignoring whitespace/case. Only `before`, `after` and `replace` operations are searched; `create` and other action names are skipped. Missing files/searches and empty searches fail; duplicate matches warn. Create operations are not checked against existing files. Exit 1 if any DLE directory fails. This is a compatibility check, not PHP/SQL execution or proof of runtime behavior.
 
 ## Deployment
 
@@ -122,7 +124,7 @@ dleplugin deploy upload example.com --file dist/demo.zip
 dleplugin deploy sites remove example.com
 ```
 
-Upload logs into DLE 13+ administration, matches the installed plugin by XML `name`, and updates it. Without `--file`, it builds first (replacing `dist/`), applying manifest version or `--version`. `--file` and `--version` are mutually exclusive. `--new` permits first installation; interactive upload can ask when missing. `--dry-run` still builds and authenticates/looks up the plugin but does not upload.
+Upload logs into DLE 13+ administration, matches the installed plugin by XML `name`, and updates it. Without `--file`, it builds first (replacing `dist/`), applying manifest version or `--version`, and `upgrade_url` or `--upgrade-url`. `--file` is mutually exclusive with `--version` and `--upgrade-url`. `--new` permits first installation; interactive upload can ask when missing. `--dry-run` still builds and authenticates/looks up the plugin but does not upload.
 
 Project registry is `dleplugin-deploy.yaml` next to the manifest; global registry is `~/.config/dleplugin/dleplugin-deploy.yaml`. Add/edit/remove target project by default; `--global` works outside a project. List/show use effective records. Project records replace whole global records for the same lowercase host (including port); fields are not merged.
 
@@ -135,4 +137,4 @@ sites:
     password_env: EXAMPLE_ADMIN_PASSWORD
 ```
 
-Host is the key, not a profile name. HTTPS defaults except for `*.localhost` (HTTP); script defaults to `admin.php`. An explicit URL bypasses saved connection settings. Add/edit authenticate before saving. Passwords are not written into YAML: stdin, selected env variable (default `DLEPLUGIN_PASSWORD`), saved-site OS credential store, then secret prompt, in that order. An empty explicitly selected variable does not fall back to the default variable. Prompted saved-site passwords and passwords piped to add/edit are remembered in the OS store; env passwords are not. `--password-stdin` requires HOST and a flag/saved login for upload. There is no `--password` flag. `--new`/`--insecure` are not persisted. Redirects stay on the same origin; use the final admin URL for cross-origin redirects.
+Host is the key, not a profile name. HTTPS defaults except for `localhost` and `*.localhost` (HTTP); script defaults to `admin.php`. An explicit URL bypasses saved connection settings. Add/edit authenticate before saving. Passwords are not written into YAML: stdin, selected env variable (default `DLEPLUGIN_PASSWORD`), saved-site OS credential store, then secret prompt, in that order. An empty explicitly selected variable does not fall back to the default variable. Prompted saved-site passwords and passwords piped to add/edit are remembered in the OS store; env passwords are not. `--password-stdin` requires HOST and a flag/saved login for upload. There is no `--password` flag. `--new`/`--insecure` are not persisted. Redirects stay on the same origin; use the final admin URL for cross-origin redirects.

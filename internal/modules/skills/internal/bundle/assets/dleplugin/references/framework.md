@@ -362,7 +362,7 @@ if ($form->isSubmitAndValid()) {
 return $this->admin->render('settings', ['form' => $form]);
 ```
 
-The supplied `Form::isSubmitAndValid()` binds POST data and returns true on submission; it does not validate CSRF or model rules. The stock `@form` view does not add `user_hash`. The `settings` view above must be supplied by the plugin and add an escaped hidden token (use the companion `dle-admin-ui` skill for native form markup when available) and apply explicit input/model validation. A save redirect alone does not enqueue a success message.
+The supplied `Form::isSubmitAndValid()` binds POST data and returns true on submission; it does not validate CSRF or model rules. The stock `@form` view does not add `user_hash`. The `settings` view above must be supplied by the plugin and add an escaped hidden token (use the installed companion `dle-admin-ui` skill for native form markup) and apply explicit input/model validation. A save redirect alone does not enqueue a success message.
 
 Use `Admin\ModelController` when the task is a straightforward CRUD admin table. Override `getUrl()`, `getTable()`, and `getModel()`, and adjust public properties like `$list_display`, `$order`, `$sort`, `$limit`, `$actions`, `$fields`, or `$exclude`.
 

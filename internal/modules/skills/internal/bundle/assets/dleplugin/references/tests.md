@@ -112,11 +112,11 @@ dleplugin test --coverage-html /tmp/plugin-coverage
 dleplugin test --refresh-dle
 ```
 
-`--coverage`, `--coverage-min`, and `--coverage-html` use PCOV; the latter two imply coverage. `--refresh-dle` downloads/installs the trial again. The command returns Pest's exit code. With no tests it warns and succeeds; this is not evidence of test coverage.
+`--coverage`, `--coverage-min`, and `--coverage-html` use PCOV; the latter two imply coverage. `--refresh-dle` downloads/installs the trial again. Snapshots use Pest's standard layout under `tests/.pest/snapshots/<test path>/`. The command returns Pest's exit code. With no tests it warns and succeeds; this is not evidence of test coverage.
 
 ## Runner, bootstrap and dependencies
 
-Requires a working Docker engine, not a local PHP/Composer installation. The CLI downloads and caches the DLE trial installation, then creates a fresh copy/database for each run with MariaDB. Tool image uses PHP 8.4, Pest 4, Mockery and PCOV. It connects plugin files and patches like a real installation; prefer deterministic test doubles inside that environment rather than assuming the runner avoids DLE.
+Requires a working Docker engine, not a local PHP/Composer installation. The CLI downloads and caches the DLE trial installation, then creates a fresh copy/database for each run with MariaDB. Tool image uses PHP 8.4, Pest 5, Mockery and PCOV. It connects plugin files and patches like a real installation; prefer deterministic test doubles inside that environment rather than assuming the runner avoids DLE.
 
 Runtime dependencies are `dependencies` in `dleplugin.yml` (other plugin display names, not filesystem paths). They are recursively connected before the plugin. Lookup uses configured `test.dependency_roots` or the top-level `dependency_roots`: first a matching directory by name, then plugin manifests directly inside those roots, matching name/slug. Missing dependencies and dependency cycles fail.
 
@@ -128,9 +128,9 @@ depends:
   - AnotherPlugin
 ```
 
-An existing plugin path resolves relative to the project root; otherwise the value is looked up as a plugin name. This differs from static's independent `dlestatic.yml.dependencies` lookup; see [cli.md](cli.md).
+An existing plugin path resolves relative to the project root; otherwise the value is looked up as a plugin name. This differs from static's independent `dlestatic.yml.dependencies` lookup; see [cli.md](cli.md). Unlike `static`, `test` has no `--dependency-root` flag; use `dletest.yml.depends` or configured `test.dependency_roots`.
 
-The bootstrap loads `.env` and optional root `conftest.php`, defines DLE constants, initializes DLE/database/session/user/category state, and autoloads `Tests\` from `tests/`. Installed plugin classes still need working manifest autoloading/bootstrap. Inspect `conftest.php` before adding globals or doubles. DLE 19+ xfields compatibility helpers are supplied by the test bootstrap. Do not infer the installed trial's version from a fixed old example: the runner downloads the current trial.
+Before bootstrap, the CLI links the plugin's `templates/` contents into the trial site's `templates/Default/`, and links plugin-root `.env` and `conftest.php` when present. Existing destination entries are kept rather than overwritten. The bootstrap loads `.env` and optional root `conftest.php`, defines DLE constants, initializes DLE/database/session/user/category state, and autoloads `Tests\` from `tests/`. Installed plugin classes still need working manifest autoloading/bootstrap. Inspect `conftest.php` before adding globals or doubles. DLE 19+ xfields compatibility helpers are supplied by the test bootstrap. Do not infer the installed trial's version from a fixed old example: the runner downloads the current trial.
 
 
 ## Fixing failures
