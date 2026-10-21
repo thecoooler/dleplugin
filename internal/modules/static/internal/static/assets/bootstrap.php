@@ -50,6 +50,14 @@ function get_keywords_from_clear_content(string $story): string
  */
 function set_vars($file, $data) {}
 
+/**
+ * @param string $name
+ * @param string $value
+ * @param int $expires Lifetime in days; 0 for a session cookie.
+ * @return void
+ */
+function set_cookie($name, $value, $expires) {}
+
 /** @param false|string $sid */
 function dle_session($sid = false)
 {
