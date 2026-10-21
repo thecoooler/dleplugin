@@ -1,7 +1,7 @@
 # Releases
 
 The public module path is `github.com/thecoooler/dleplugin` and release tags
-use semantic versions such as `v0.1.0`. Build with Go 1.27.2+ and keep the
+use semantic versions such as `v0.1.0`. Build with Go 1.27.3+ and keep the
 minimum patch version in `go.mod` current. CI uses that version and scans both
 sources and built binaries with the pinned govulncheck version.
 
