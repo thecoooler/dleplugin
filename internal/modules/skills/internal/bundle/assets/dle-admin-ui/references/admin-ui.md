@@ -3,8 +3,10 @@
 ## Contents
 
 - [Core rules](#core-rules)
+- [Inline code and scoped CSS](#inline-code-and-scoped-css)
 - [Page shell (DLEPlugin vs raw)](#page-shell-dleplugin-vs-raw)
 - [Native breadcrumbs for list, add, and edit pages](#native-breadcrumbs-for-list-add-and-edit-pages)
+- [Plugin home: section directory](#plugin-home-section-directory)
 - [Two form layouts](#two-form-layouts)
 - [Controls catalog](#controls-catalog)
 - [Buttons](#buttons)
@@ -55,6 +57,29 @@ Reference sources in the CMS tree:
    A confirmation dialog and `Form::isSubmitAndValid()` do not replace this server check.
 4. **Prefer DLEPlugin views/helpers** when the project already uses the framework; fall back to raw HTML only when you need a custom layout.
 5. **Do not load extra CSS/JS frameworks** unless the user explicitly asks. Admin already loads Font Awesome, Bootstrap-style panels, Selectpicker (via `uniform` class), Switchery (`.switch`), Chosen, datetimepicker, popovers.
+
+## Inline code and scoped CSS
+
+Do not assume `<code>` renders inline in the installed admin theme. The inspected `public/adminpanel/stylesheets/application.css` contains `code,pre{display:block; ... white-space:pre; ...}`, so a template tag or short example inside a sentence starts a separate block. Inspect the actual theme and cascade before changing styles.
+
+For DLETemplateVars, scope the correction to its own content:
+
+```html
+<style>
+  #dtv-admin code { display: inline; }
+</style>
+<div id="dtv-admin">
+  <p>Use <code>{template-var}</code> inside the template.</p>
+  <pre><code>First line
+Second line</code></pre>
+</div>
+```
+
+Use this wrapper around plugin-owned content on each rendered screen: the list, help, and the separate form page. Keep the wrapper inside the existing DLE shell: wrap the view content returned in `AdminResponse`, or content between `echoheader()` and `echofooter()` in a classic module. Do not wrap or restyle admin headers, navigation, breadcrumbs, footer, or other modules. Use a plugin-specific wrapper for other plugins; never fix this with global `code` / `pre` rules or edits to the shared theme stylesheet.
+
+Short inline examples belong in `<code>` within the surrounding sentence. Intentional multiline examples belong in `<pre><code>…</code></pre>`: the `<pre>` stays block-level and preserves line breaks even though its child `<code>` is inline. If existing markup deliberately uses a standalone `<code>` as a multiline block, convert it to `<pre><code>` or give it a dedicated plugin-scoped block class. The inline correction only changes `display`; inspect inherited/theme `white-space`, padding, and overflow separately if wrapping or spacing still needs adjustment.
+
+Verify on the rendered admin page with the actual theme and plugin styles loaded, not just from the HTML tag or a CSS source search. In DevTools select an inline example and check **Computed → display**, or run `getComputedStyle(document.querySelector('#dtv-admin p code')).display` with a selector matching the real example; expect `inline`. Inspect matched rules to confirm the scoped override wins over the theme. Check the list, help, and separate form page, including any later-loaded styles. Confirm sentences flow naturally, multiline examples retain line breaks with a block-level `<pre>`, and shell/other-module code outside `#dtv-admin` retains its previous computed style.
 
 ## Page shell (DLEPlugin vs raw)
 
@@ -137,6 +162,140 @@ echofooter();
 ```
 
 `templatevars` is illustrative; use the real module and project language strings. For DLEPlugin, implement the same hierarchy through its verified breadcrumb API, with parent URLs from `$admin->url()`. Do not copy these `echoheader()` / `echofooter()` calls into an `AdminResponse` page.
+
+## Plugin home: section directory
+
+For a plugin with several independent admin sections, the home page is **only a directory of section links**. Settings forms, CRUD tables, statistics, and their actions belong inside the selected section. Do not put them below the directory, preselect a section on the home page, or replace the directory with tabs. Tabs and options-style filters remain appropriate **within a page/section**, for example two groups of settings saved by one form.
+
+Use the native hierarchy exactly: `panel panel-default` → `panel-heading` + `list-bordered` → `row box-section` → `col-sm-6 media-list media-list-linked` → `a.media-link` → `media-left` + `media-body`. The image uses `img-lg section_icon`. Each row holds at most two sections; close the row after the second item and close a final one-item row normally, without an empty placeholder column. No custom CSS, card system, or extra JS is needed.
+
+### Complete markup (three sections, two rows)
+
+This classic-module example uses `myplugin` as a placeholder for the actual mod name, not a dependency on a particular plugin. At `admin.php?mod=myplugin`, render only this directory inside the existing DLE shell:
+
+```html
+<div class="panel panel-default">
+  <div class="panel-heading">Разделы плагина</div>
+  <div class="list-bordered">
+    <div class="row box-section">
+      <div class="col-sm-6 media-list media-list-linked">
+        <a class="media-link" href="?mod=myplugin&amp;section=settings">
+          <div class="media-left"><img src="public/adminpanel/images/default_icon.png" class="img-lg section_icon" alt=""></div>
+          <div class="media-body">
+            <h6 class="media-heading text-semibold">Настройки</h6>
+            <span class="text-muted">Группы пользователей и гостей, которым разрешено ставить реакции.</span>
+          </div>
+        </a>
+      </div>
+      <div class="col-sm-6 media-list media-list-linked">
+        <a class="media-link" href="?mod=myplugin&amp;section=reactions">
+          <div class="media-left"><img src="public/adminpanel/images/default_icon.png" class="img-lg section_icon" alt=""></div>
+          <div class="media-body">
+            <h6 class="media-heading text-semibold">Реакции</h6>
+            <span class="text-muted">Добавление, редактирование и удаление доступных реакций.</span>
+          </div>
+        </a>
+      </div>
+    </div>
+    <div class="row box-section">
+      <div class="col-sm-6 media-list media-list-linked">
+        <a class="media-link" href="?mod=myplugin&amp;section=stats">
+          <div class="media-left"><img src="public/adminpanel/images/default_icon.png" class="img-lg section_icon" alt=""></div>
+          <div class="media-body">
+            <h6 class="media-heading text-semibold">Статистика</h6>
+            <span class="text-muted">Количество реакций и популярные материалы за выбранный период.</span>
+          </div>
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+### PHP generation and classic-module routing
+
+Keep the existing DLE access checks and shell. The example below runs after authorization in the classic `engine/inc/myplugin.php` entry. The three fixed view files contain the actual settings form, reactions CRUD, and statistics respectively; adapt their paths to the project. They output section content only, without another header/footer. Never derive an include path from request data.
+
+```php
+$escape = static function (string $value): string {
+    return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+};
+$url = static function (string $section = ''): string {
+    $query = ['mod' => 'myplugin']; // Use the project's actual mod name.
+    if ($section !== '') {
+        $query['section'] = $section;
+    }
+    return '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+};
+$sections = [
+    'settings' => ['Настройки', 'Группы пользователей и гостей, которым разрешено ставить реакции.'],
+    'reactions' => ['Реакции', 'Добавление, редактирование и удаление доступных реакций.'],
+    'stats' => ['Статистика', 'Количество реакций и популярные материалы за выбранный период.'],
+];
+$section = $_GET['section'] ?? '';
+if (!is_string($section) || ($section !== '' && !isset($sections[$section]))) {
+    msg('error', 'Ошибка', 'Неизвестный раздел', $url());
+    return;
+}
+
+echoheader('Мой плагин', '');
+if ($section === '') {
+    echo '<div class="panel panel-default"><div class="panel-heading">Разделы плагина</div>'
+        . '<div class="list-bordered">';
+    foreach (array_chunk($sections, 2, true) as $row) {
+        echo '<div class="row box-section">';
+        foreach ($row as $key => [$title, $description]) {
+            echo '<div class="col-sm-6 media-list media-list-linked">'
+                . '<a class="media-link" href="' . $escape($url($key)) . '">'
+                . '<div class="media-left"><img src="public/adminpanel/images/default_icon.png"'
+                . ' class="img-lg section_icon" alt=""></div><div class="media-body">'
+                . '<h6 class="media-heading text-semibold">' . $escape($title) . '</h6>'
+                . '<span class="text-muted">' . $escape($description) . '</span>'
+                . '</div></a></div>';
+        }
+        echo '</div>'; // Also closes the final incomplete row.
+    }
+    echo '</div></div>';
+} else {
+    echo '<a href="' . $escape($url()) . '">К разделам плагина</a>';
+    switch ($section) {
+        case 'settings': require __DIR__ . '/myplugin/views/settings.php'; break;
+        case 'reactions': require __DIR__ . '/myplugin/views/reactions.php'; break;
+        case 'stats': require __DIR__ . '/myplugin/views/stats.php'; break;
+    }
+}
+echofooter();
+```
+
+Construct URLs first, then escape once at the HTML output boundary: dynamic titles and descriptions are text, and URLs in quoted `href`, image paths in `src`, and any nonempty `alt` are attributes, all escaped with `htmlspecialchars(..., ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')`. `http_build_query()` encodes query values; it does not replace HTML escaping (`&` must become `&amp;` in markup). Use trusted internal URL builders/allowlisted destinations, not arbitrary user-supplied schemes. The standard image above is decorative beside a visible title, so `alt=""` is intentional; escape a translated/dynamic alt if a meaningful image needs one. Use the project's language strings for the heading, titles, descriptions, error, and back link, escaping them on output too. These directory links only navigate; mutating operations inside sections still require server-verified `user_hash`.
+
+### DLEPlugin framework integration
+
+Reuse the same directory markup/generation in a PHP view (for example `directory.php`), with the metadata and `$escape` above. Supply its URL callable from the controller via `$admin->url()`; do not copy the classic query builder or `echoheader()` / `echofooter()` into a framework controller/view. Register the home and three section routes in the executed admin bootstrap, following the existing namespace and controller conventions:
+
+```php
+$admin->add('/', [CatalogController::class, 'index']);
+$admin->add('/settings', [SettingsController::class, 'index']);
+$admin->add('/reactions', [ReactionsController::class, 'index']);
+$admin->add('/stats', [StatsController::class, 'index']);
+$admin->run();
+```
+
+Inside `CatalogController` extending `iCooLER\DLEPlugin\Core\Controller`, import `iCooLER\DLEPlugin\Core\AdminResponse` and return only the directory view:
+
+```php
+public function index(array $args)
+{
+    $url = function (string $section = ''): string {
+        return $this->admin->url($section === '' ? '/' : '/' . $section);
+    };
+    return new AdminResponse($this->admin->render('directory', ['url' => $url]));
+}
+```
+
+The directory view uses the `$sections` array and the home branch's rendering loop above, with no request dispatch or section includes. Each section controller renders its own content and supplies `backUrl => $this->admin->url('/')` to its view; render `<a href="<?= $escape($backUrl) ?>">К разделам плагина</a>` there, with the same escaping helper in scope. The framework supplies the page shell around `AdminResponse`.
+
+Classic modules use `section=settings|reactions|stats`; the existing framework router matches **`endpoint`**, so its equivalent URLs come from `$admin->url('/settings')`, `$admin->url('/reactions')`, and `$admin->url('/stats')`. Do not pretend `section` drives that router. If a project explicitly requires public `section=...` URLs with the framework, inspect and implement an explicit allowlisted adapter in its entrypoint; keep internal links through `$admin->url()` according to the project's routing integration. For normal framework projects, preserve native endpoint routing.
 
 ## Two form layouts
 
@@ -691,6 +850,8 @@ DLEconfirm('Are you sure?', 'Confirm', function () { ... });
 
 ## Tabs and section toolbars
 
+Use these patterns within a page or section. They do not replace the [section directory on the plugin home page](#plugin-home-section-directory).
+
 ### Bootstrap tabs (in panel heading)
 
 ```html
@@ -802,6 +963,7 @@ $('select[name="storage[type]"]').on('change', function () {
 
 ## Anti-patterns
 
+- Forms, CRUD tables, statistics, or tabs replacing the section directory on a multi-section plugin home page.
 - Custom Bootstrap 5 / Tailwind admin skins that clash with Limitless.
 - Buttons without `btn-sm` or without a `bg-*` color (a bare `btn`, or `btn btn-default`).
 - Hand-built confirmation modals instead of `DLEconfirm` / `DLEconfirmDelete`.
@@ -820,8 +982,10 @@ $('select[name="storage[type]"]').on('change', function () {
 ## Quick checklist before finishing admin UI work
 
 - [ ] List/add/edit hierarchy uses native breadcrumbs: one automatic Home, linked parent, active unlinked last item; header/footer appear once
-- [ ] Layout matches either **settings table** or **form-horizontal**
-- [ ] Panels use `panel panel-default` + heading/body|table/footer
+- [ ] Multi-section plugin home shows only the section directory; links open separate content and each section links back
+- [ ] Directory uses native media links, two columns per row, and a correctly closed final incomplete row
+- [ ] Forms inside sections match either **settings table** or **form-horizontal**; tabs stay within a page/section
+- [ ] Panels use `panel panel-default` with the appropriate directory, body, table, or footer structure
 - [ ] Booleans use `class="switch"`; single-selects use `uniform` (`uniform form-control` to align in grids); multi-selects use a Chosen class + `multiple` + `.chosen()` init
 - [ ] **Every action** button is `btn bg-* btn-sm btn-raised` (native modal `.close` controls are exempt) (no bare `btn`, no missing `btn-sm`)
 - [ ] Recommended role colors: `bg-teal` primary, `bg-grey-400` cancel, `bg-danger` destructive
@@ -829,6 +993,7 @@ $('select[name="storage[type]"]').on('change', function () {
 - [ ] Destructive actions use `DLEconfirmDelete`, not a hand-built confirm modal
 - [ ] Save/delete include an escaped `user_hash`; server rejects missing/invalid tokens before mutation
 - [ ] User-facing strings escaped
+- [ ] Template tags/short `<code>` examples have computed `display: inline` within sentences on list, help, and separate form pages; any override is scoped to plugin content, multiline examples stay block-level, and shell/other modules are unaffected
 - [ ] Links built via `$admin->url()` in DLEPlugin projects
 - [ ] No extra CSS framework unless requested
 - [ ] Visual parity with a nearby core screen (`options`, `social`, `editvote`, `storage`)

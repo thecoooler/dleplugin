@@ -90,6 +90,8 @@ For admin markup, forms, controls, tabs, and modals, also use the separate `dle-
 
 When creating or splitting list/add/edit admin pages, include native breadcrumbs in the change: linked parent list, active current page, and DLE's automatic Home. Follow the companion's [page navigation examples](../dle-admin-ui/references/admin-ui.md#native-breadcrumbs-for-list-add-and-edit-pages). `AdminResponse` pages already receive header/footer wrapping; do not duplicate `echoheader()` in controllers or views. Check the installed framework's breadcrumb API before passing navigation data; the raw DLE array is not automatically the framework response format.
 
+For a plugin with multiple independent admin sections, follow [Plugin home: section directory](../dle-admin-ui/references/admin-ui.md#plugin-home-section-directory). The home page contains only native DLE section links; settings forms, CRUD tables, statistics, and any internal tabs belong inside the selected section, with a link back to the directory. Preserve the project's classic `section` routing or framework `$admin->url()`/endpoint routing as described there.
+
 ## Completion checklist
 
 - Manifest examples use supported field types; namespaces and source targets agree.

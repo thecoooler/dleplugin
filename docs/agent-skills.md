@@ -109,6 +109,10 @@ Local adaptations relative to that revision:
   trusted icon markup require separate handling.
 - Button guidance exempts native modal `.close` controls consistently.
 - The CLI reference documents the new skills commands and current upgrade URL flags.
+- Admin UI guidance includes a native two-column section directory for multi-section
+  plugin home pages, classic `section` dispatch and framework URL routing, with
+  forms/CRUD/statistics and tabs kept inside sections. Both skills link to it;
+  bundled eval scenarios cover classic and framework integration.
 - Companion links describe the installed sibling layout, guaranteed by bundling
   both skills.
 

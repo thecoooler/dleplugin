@@ -33,18 +33,30 @@
     },
     {
       "id": 6,
+      "prompt": "В классическом engine/inc/myplugin.php сделай главную админки каталогом разделов Настройки, Реакции, Статистика. Внутри должны открываться форма, CRUD и отчёт. Названия могут содержать кавычки и HTML.",
+      "expected_output": "Home without section renders only panel panel-default / panel-heading / list-bordered / row box-section / col-sm-6 media-list media-list-linked / media-link / media-left / media-body, with img-lg section_icon and public/adminpanel/images/default_icon.png. Three titled/described links use section=settings|reactions|stats, laid out two then one with balanced rows. Escapes dynamic text, href and nonempty alt, uses decorative empty alt, allowlists section dispatch and fixed view paths, provides back links, keeps existing raw DLE shell/access checks and puts forms/CRUD/statistics only inside sections. No tabs replacing the directory or extra CSS framework.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "В существующем DLEPlugin-проекте добавь каталог трёх самостоятельных разделов на главной. В настройках нужны две вкладки с общей кнопкой сохранения. Сохрани framework routing.",
+      "expected_output": "Loads the section-directory reference. Root controller returns only directory view via AdminResponse; framework supplies shell. Registers separate home/settings/reactions/stats routes in executed bootstrap, builds all links and back URLs via admin->url(), preserves endpoint routing rather than assuming section dispatch. Native media directory has two entries then one, escaped labels/descriptions/URLs/alt. Tabs and a single CSRF-protected form are inside settings only, CRUD and statistics in their own sections; no extra CSS/JS framework.",
+      "files": []
+    },
+    {
+      "id": 8,
       "prompt": "В engine/inc/templatevars.php вынеси добавление и редактирование переменной из списка на отдельные страницы. Сохрани штатную навигацию DLE; имя переменной может содержать кавычки и HTML.",
       "expected_output": "Uses echoheader second-argument arrays for list/add/edit, with linked parent list and final empty-key active label. Does not substitute a Back to list link or add Home manually. Escapes the dynamic edit label and URL attributes, preserves one header/footer, and checks list → add/edit → parent navigation.",
       "files": []
     },
     {
-      "id": 7,
+      "id": 9,
       "prompt": "В существующем DLEPlugin admin UI вынеси создание и редактирование записей на отдельные маршруты. Сейчас контроллер возвращает AdminResponse.",
       "expected_output": "Inspects the installed AdminResponse/Admin breadcrumb contract before choosing its format. Uses admin->url for parent links, supplies parent/current native breadcrumbs with appropriate escaping, and leaves header/footer to the wrapper. Checks active current item and single automatic Home; does not add raw echoheader to views.",
       "files": []
     },
     {
-      "id": 8,
+      "id": 10,
       "prompt": "После AJAX-загрузки формы настройки DLE новый переключатель и одиночный select остаются обычными HTML-контролами. Исправь и проверь повторную загрузку.",
       "expected_output": "Initializes new switches with Switchery and new uniform selects with selectpicker, scoped to inserted elements without initializing existing instances twice. Distinguishes initialization from refreshing options on existing widgets.",
       "files": []

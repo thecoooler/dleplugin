@@ -135,6 +135,12 @@
     },
     {
       "id": 20,
+      "prompt": "Добавь главную админки плагина с самостоятельными разделами Настройки, Реакции и Статистика. Используй существующий DLEPlugin framework и dleplugin.yml.",
+      "expected_output": "Inspects manifest, src and executed bootstrap; keeps packaging and namespace conventions. Explicitly follows companion dle-admin-ui Plugin home: section directory guidance. Home contains only native two-column media links, three sections form two rows with final single entry. Settings/CRUD/statistics render only in their respective routes with back links; tabs may group settings within a section only. Uses admin->url() and endpoint router with AdminResponse, no duplicate raw shell, escapes output and retains CSRF checks for mutations. Runs applicable project checks without publishing or deployment.",
+      "files": []
+    },
+    {
+      "id": 21,
       "prompt": "В DLETemplateVars добавление и редактирование переменной надо перенести со списка на отдельные страницы. Прочитай проект и внеси правки с проверкой.",
       "expected_output": "Loads companion dle-admin-ui and inspects existing integration before choosing raw DLE or framework shell. Keeps linked parent-list and active current breadcrumbs, one automatic Home and escaped dynamic labels. Uses the installed AdminResponse breadcrumb contract when applicable, without duplicate echoheader/footer; validates save CSRF and runs relevant CLI checks. Does not replace native breadcrumbs with only a Back to list link.",
       "files": []

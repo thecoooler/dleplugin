@@ -19,7 +19,7 @@ make build      # bin/dleplugin
 make install    # go install into $GOBIN
 ```
 
-Requires Go 1.27.2+ (including the security fixes in that patch release).
+Requires Go 1.27.3+ (including the security fixes in that patch release).
 Builds disable CGO by default; set `CGO_ENABLED=1` explicitly if needed.
 
 ## Quick start
