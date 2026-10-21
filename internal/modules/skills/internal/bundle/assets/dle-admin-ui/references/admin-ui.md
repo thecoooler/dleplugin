@@ -3,6 +3,7 @@
 ## Contents
 
 - [Core rules](#core-rules)
+- [Inline code and scoped CSS](#inline-code-and-scoped-css)
 - [Page shell (DLEPlugin vs raw)](#page-shell-dleplugin-vs-raw)
 - [Two form layouts](#two-form-layouts)
 - [Controls catalog](#controls-catalog)
@@ -45,6 +46,29 @@ Reference sources in the CMS tree:
    In PHP verify: `$_REQUEST['user_hash'] === $dle_login_hash`.
 4. **Prefer DLEPlugin views/helpers** when the project already uses the framework; fall back to raw HTML only when you need a custom layout.
 5. **Do not load extra CSS/JS frameworks** unless the user explicitly asks. Admin already loads Font Awesome, Bootstrap-style panels, Selectpicker (via `uniform` class), Switchery (`.switch`), Chosen, datetimepicker, popovers.
+
+## Inline code and scoped CSS
+
+Do not assume `<code>` renders inline in the installed admin theme. The inspected `public/adminpanel/stylesheets/application.css` contains `code,pre{display:block; ... white-space:pre; ...}`, so a template tag or short example inside a sentence starts a separate block. Inspect the actual theme and cascade before changing styles.
+
+For DLETemplateVars, scope the correction to its own content:
+
+```html
+<style>
+  #dtv-admin code { display: inline; }
+</style>
+<div id="dtv-admin">
+  <p>Use <code>{template-var}</code> inside the template.</p>
+  <pre><code>First line
+Second line</code></pre>
+</div>
+```
+
+Use this wrapper around plugin-owned content on each rendered screen: the list, help, and the separate form page. Keep the wrapper inside the existing DLE shell: wrap the view content returned in `AdminResponse`, or content between `echoheader()` and `echofooter()` in a classic module. Do not wrap or restyle admin headers, navigation, breadcrumbs, footer, or other modules. Use a plugin-specific wrapper for other plugins; never fix this with global `code` / `pre` rules or edits to the shared theme stylesheet.
+
+Short inline examples belong in `<code>` within the surrounding sentence. Intentional multiline examples belong in `<pre><code>…</code></pre>`: the `<pre>` stays block-level and preserves line breaks even though its child `<code>` is inline. If existing markup deliberately uses a standalone `<code>` as a multiline block, convert it to `<pre><code>` or give it a dedicated plugin-scoped block class. The inline correction only changes `display`; inspect inherited/theme `white-space`, padding, and overflow separately if wrapping or spacing still needs adjustment.
+
+Verify on the rendered admin page with the actual theme and plugin styles loaded, not just from the HTML tag or a CSS source search. In DevTools select an inline example and check **Computed → display**, or run `getComputedStyle(document.querySelector('#dtv-admin p code')).display` with a selector matching the real example; expect `inline`. Inspect matched rules to confirm the scoped override wins over the theme. Check the list, help, and separate form page, including any later-loaded styles. Confirm sentences flow naturally, multiline examples retain line breaks with a block-level `<pre>`, and shell/other-module code outside `#dtv-admin` retains its previous computed style.
 
 ## Page shell (DLEPlugin vs raw)
 
@@ -767,6 +791,7 @@ $('select[name="storage[type]"]').on('change', function () {
 - [ ] Destructive actions use `DLEconfirmDelete`, not a hand-built confirm modal
 - [ ] POST includes `user_hash`; server verifies it
 - [ ] User-facing strings escaped
+- [ ] Template tags/short `<code>` examples have computed `display: inline` within sentences on list, help, and separate form pages; any override is scoped to plugin content, multiline examples stay block-level, and shell/other modules are unaffected
 - [ ] Links built via `$admin->url()` in DLEPlugin projects
 - [ ] No extra CSS framework unless requested
 - [ ] Visual parity with a nearby core screen (`options`, `social`, `editvote`, `storage`)

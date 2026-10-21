@@ -23,6 +23,7 @@ Create admin screens that match the installed DLE theme. This skill supports bot
 ## Essential conventions
 
 - Use DLE's native panels and settings-table or horizontal-form layouts. Admin already provides jQuery, Bootstrap 3 patterns, Font Awesome, Switchery, Selectpicker, and Chosen.
+- The admin theme can make `<code>` block-level. Keep template tags and short examples within sentences inline using CSS scoped to the plugin content wrapper; preserve intentional multiline blocks. See [inline code and scoped CSS](references/admin-ui.md#inline-code-and-scoped-css) for the DLETemplateVars example and computed-style checks.
 - Action buttons use `btn` + one `bg-*` color + `btn-sm` + `btn-raised`. Modal `.close` controls retain their native markup. See the reference for `AdminHTML::button()` defaults that append an extra color.
 - Booleans use `.switch`; single selects use `.uniform` (add `.form-control` for grid alignment); multiple selects use Chosen and explicit initialization.
 - Tabs use `data-toggle="tab"`; one form wraps all tab panes. Bootstrap modals use matching triggers/ids and one form around header, body, and footer. Confirm destructive actions with `DLEconfirmDelete` / `DLEconfirm`.
