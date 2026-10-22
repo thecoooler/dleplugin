@@ -123,3 +123,18 @@ func TestHTTPInstallation(t *testing.T) {
 		})
 	}
 }
+
+func TestRedact(t *testing.T) {
+	const db, admin = `pa"ss/wörd\`, "it's<me>"
+	for body, want := range map[string]string{
+		`{"error":"denied: pa\"ss\/w\u00f6rd\\"}`:    `{"error":"denied: [redacted]"}`,
+		`{"error":"pa\"ss/wörd\\"}`:                  `{"error":"[redacted]"}`,
+		`denied: pa"ss/wörd\ by it&#039;s&lt;me&gt;`: `denied: [redacted] by [redacted]`,
+		`it&#39;s&lt;me&gt; it's<me>`:                `[redacted] [redacted]`,
+		"{\"a\":\"x\\ny\"}":                          `{"a":"[redacted]"}`,
+	} {
+		if got := redact(body, db, admin, "x\ny"); got != want {
+			t.Errorf("redact(%s) = %s, want %s", body, got, want)
+		}
+	}
+}

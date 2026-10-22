@@ -11,8 +11,10 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
+	"unicode/utf16"
 )
 
 type Options struct {
@@ -31,6 +33,59 @@ var (
 	submitControl     = regexp.MustCompile(`(?i)\btype\s*=\s*(?:"submit"|'submit'|submit(?:\s|>))`)
 	failedRequirement = regexp.MustCompile(`(?i)<font\s+color\s*=\s*["']?red\b|<span\s+class\s*=\s*["']text-danger["']`)
 )
+
+var (
+	// phpHTML escapes like PHP's htmlspecialchars.
+	phpHTML   = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#039;")
+	jsonShort = map[rune]string{'\b': `\b`, '\f': `\f`, '\n': `\n`, '\r': `\r`, '\t': `\t`}
+)
+
+// redact replaces each secret in body, including the forms PHP's
+// json_encode and htmlspecialchars give it in installer responses.
+func redact(body string, secrets ...string) string {
+	var forms []string
+	for _, secret := range secrets {
+		if secret == "" {
+			continue
+		}
+		forms = append(forms, secret, stdhtml.EscapeString(secret),
+			phpHTML.Replace(secret))
+		for _, slash := range []bool{false, true} {
+			for _, unicode := range []bool{false, true} {
+				forms = append(forms, jsonEscape(secret, slash, unicode))
+			}
+		}
+	}
+	// Longer forms first, so a secret is not replaced inside its escaped form.
+	slices.SortFunc(forms, func(a, b string) int { return len(b) - len(a) })
+	for _, form := range forms {
+		body = strings.ReplaceAll(body, form, "[redacted]")
+	}
+	return body
+}
+
+// jsonEscape returns s as inside a JSON string, optionally escaping "/" and
+// non-ASCII characters like PHP's json_encode does by default.
+func jsonEscape(s string, slash, unicode bool) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '"' || r == '\\':
+			b.WriteString(`\` + string(r))
+		case jsonShort[r] != "":
+			b.WriteString(jsonShort[r])
+		case r == '/' && slash:
+			b.WriteString(`\/`)
+		case r < 0x20 || r > 0x7f && unicode:
+			for _, u := range utf16.Encode([]rune{r}) {
+				fmt.Fprintf(&b, `\u%04x`, u)
+			}
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
 
 // Run needs an empty database and a writable, freshly unpacked distribution.
 // It never retries a mutating request: a lost response may already have changed DB/files.
@@ -113,13 +168,9 @@ func Run(ctx context.Context, opts Options, log func(string)) error {
 			body = stdhtml.UnescapeString(tags.ReplaceAllString(scripts.ReplaceAllString(body, " "), " "))
 			body = strings.Join(strings.Fields(body), " ")
 		}
-		for _, secret := range []string{opts.DBPassword, opts.Password} {
-			if secret != "" {
-				body = strings.ReplaceAll(body, secret, "[redacted]")
-			}
-		}
-		if len(body) > 1200 {
-			body = body[:1200] + "…"
+		body = redact(body, opts.DBPassword, opts.Password)
+		if r := []rune(body); len(r) > 1200 {
+			body = string(r[:1200]) + "…"
 		}
 		return fmt.Errorf("installer %s: unexpected response: %s", action, body)
 	}
