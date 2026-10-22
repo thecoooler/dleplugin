@@ -175,7 +175,9 @@ services for deployment sites, PHPStan, and patch checking.
   check the admin login before saving. Passwords are kept out of the file: a
   site may reference an environment variable, and passwords checked by
   `sites add/edit` (or typed for a saved site on upload) go to the OS
-  credential store via go-keyring. TLS is verified unless `--insecure`; the
+  credential store via go-keyring. `DLEPLUGIN_CREDENTIAL_STORE` (`auto`,
+  `keyring`, `file`) lets them fall back to, or go only to, a `0600`
+  `credentials.yaml` next to the global config. TLS is verified unless `--insecure`; the
   AJAX URL is resolved next to the admin script: `engine/ajax/controller.php`,
   or `index.php?controller=ajax` (DLE 19+) when the first answers 403/404.
   Admin requests follow redirects only within their original origin.

@@ -23,6 +23,20 @@ import (
 // PasswordEnv is the environment variable holding the admin password.
 const PasswordEnv = "DLEPLUGIN_PASSWORD"
 
+// CredentialStoreEnv selects where saved passwords are kept: auto (default),
+// keyring or file.
+const CredentialStoreEnv = "DLEPLUGIN_CREDENTIAL_STORE"
+
+// credentials returns the saved-password store. Its file lives next to the
+// global config.
+func credentials(rt *app.Runtime) (deploysites.Credentials, error) {
+	c, err := deploysites.NewCredentials(filepath.Dir(rt.Config.Path()), os.Getenv(CredentialStoreEnv))
+	if err != nil {
+		return c, fmt.Errorf("%s: %w", CredentialStoreEnv, err)
+	}
+	return c, nil
+}
+
 type module struct{}
 
 // Module returns the deploy module.
@@ -308,11 +322,15 @@ func readPassword(rt *app.Runtime, fromStdinFlag bool, env, host, login string) 
 		return p, fromEnv, nil
 	}
 	if host != "" {
-		p, ok, err := deploysites.Password(host, login)
+		c, err := credentials(rt)
+		if err != nil {
+			return "", fromStore, err
+		}
+		p, loc, err := c.Password(host, login)
 		if err != nil {
 			rt.UI.Debugf("%v", err)
-		} else if ok {
-			rt.UI.Debugf("using the password saved for %s@%s", login, host)
+		} else if loc != "" {
+			rt.UI.Debugf("using the password saved for %s@%s (%s)", login, host, loc)
 			return p, fromStore, nil
 		}
 	}
@@ -346,11 +364,23 @@ func signIn(cmd *cobra.Command, rt *app.Runtime, client *dleadmin.Client, o opti
 // rememberPassword saves a password in the OS credential store, warning on
 // failure: the store may be unavailable (for example, on a headless Linux).
 func rememberPassword(rt *app.Runtime, host, login, password string) {
-	if err := deploysites.SavePassword(host, login, password); err != nil {
+	c, err := credentials(rt)
+	if err != nil {
+		rt.UI.Warningf("%v", err)
+		return
+	}
+	loc, fallback, err := c.SavePassword(host, login, password)
+	if fallback != nil {
+		rt.UI.Warningf("%v", fallback)
+	}
+	if err != nil {
 		rt.UI.Warningf("%v; use --password-env instead", err)
 		return
 	}
-	rt.UI.Debugf("password for %s@%s saved", login, host)
+	if fallback != nil {
+		rt.UI.Warningf("Password for %s@%s saved in plain text to %s; set %s=file to skip the credential store", login, host, c.Path, CredentialStoreEnv)
+	}
+	rt.UI.Debugf("password for %s@%s saved (%s)", login, host, loc)
 }
 
 func resolveUpload(cmd *cobra.Command, rt *app.Runtime, o options, target string) (string, options, error) {

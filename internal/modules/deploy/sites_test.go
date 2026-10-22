@@ -1,6 +1,7 @@
 package deploy_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/thecoooler/dleplugin/internal/dleadmin/dleadmintest"
 	"github.com/thecoooler/dleplugin/internal/modules/deploy"
 	"github.com/thecoooler/dleplugin/internal/modules/deploy/internal/deploysites"
+	"github.com/zalando/go-keyring"
 )
 
 func saveSites(t *testing.T, path string, sites map[string]deploysites.Site) {
@@ -228,7 +230,8 @@ func TestSavedPassword(t *testing.T) {
 	fixture(t, "admin_section_only", e.work)
 	writeXML(t, e.work, "Ready Plugin")
 	host, _ := deploysites.Host(s.URL)
-	t.Cleanup(func() { deploysites.DeletePassword(host, "admin") })
+	creds := e.credentials(t)
+	t.Cleanup(func() { creds.DeletePassword(host, "admin") })
 	if code := e.run("deploy", "sites", "add", s.URL, "-u", "admin", "--password-stdin"); code != 0 {
 		t.Fatalf("add: %s", e.errB)
 	}
@@ -236,8 +239,8 @@ func TestSavedPassword(t *testing.T) {
 	if strings.Contains(string(body), "secret") {
 		t.Fatalf("config contains password: %s", body)
 	}
-	if p, ok, err := deploysites.Password(host, "admin"); err != nil || !ok || p != "secret" {
-		t.Fatalf("password not saved: %q, %v, %v", p, ok, err)
+	if p, loc, err := creds.Password(host, "admin"); err != nil || loc != deploysites.InKeyring || p != "secret" {
+		t.Fatalf("password not saved: %q, %v, %v", p, loc, err)
 	}
 	// Non-interactive upload without any password source uses the saved one.
 	if code := e.run("deploy", "upload", "-f", "ready.xml", host); code != 0 || len(s.Uploads()) != 1 {
@@ -248,7 +251,7 @@ func TestSavedPassword(t *testing.T) {
 		t.Fatalf("show: %s, %s", e.out, e.errB)
 	}
 	// A rejected saved password is asked again and replaced.
-	if err := deploysites.SavePassword(host, "admin", "stale"); err != nil {
+	if _, _, err := creds.SavePassword(host, "admin", "stale"); err != nil {
 		t.Fatal(err)
 	}
 	e.rt.UI.In = strings.NewReader("secret\n")
@@ -256,13 +259,13 @@ func TestSavedPassword(t *testing.T) {
 	if code := e.run("deploy", "upload", "-f", "ready.xml", host); code != 0 || !strings.Contains(e.errB.String(), "saved password was rejected") {
 		t.Fatalf("retry after rejected password: %s", e.errB)
 	}
-	if p, _, _ := deploysites.Password(host, "admin"); p != "secret" {
+	if p, _, _ := creds.Password(host, "admin"); p != "secret" {
 		t.Fatalf("password not replaced: %q", p)
 	}
 	if code := e.run("deploy", "sites", "remove", host); code != 0 {
 		t.Fatalf("remove: %s", e.errB)
 	}
-	if _, ok, _ := deploysites.Password(host, "admin"); ok {
+	if _, loc, _ := creds.Password(host, "admin"); loc != "" {
 		t.Fatal("password not deleted with the site")
 	}
 }
@@ -276,7 +279,41 @@ func TestEnvPasswordIsNotSaved(t *testing.T) {
 	if code := e.run("deploy", "sites", "add", s.URL, "-u", "admin", "--password-env", "TEST_SITE_PASSWORD"); code != 0 {
 		t.Fatalf("add: %s", e.errB)
 	}
-	if _, ok, _ := deploysites.Password(host, "admin"); ok {
+	if _, loc, _ := e.credentials(t).Password(host, "admin"); loc != "" {
 		t.Fatal("password from the environment was saved")
+	}
+}
+
+func TestPasswordFileFallback(t *testing.T) {
+	keyring.MockInitWithError(errors.New("no secret service"))
+	t.Cleanup(keyring.MockInit)
+	s := dleadmintest.New(t, "admin", "secret", dleadmin.Plugin{ID: 3, Name: "Ready Plugin"})
+	e := newEnv(t, "secret\n", false)
+	fixture(t, "admin_section_only", e.work)
+	writeXML(t, e.work, "Ready Plugin")
+	host, _ := deploysites.Host(s.URL)
+	creds := e.credentials(t)
+	if code := e.run("deploy", "sites", "add", s.URL, "-u", "admin", "--password-stdin"); code != 0 {
+		t.Fatalf("add: %s", e.errB)
+	}
+	if !strings.Contains(e.errB.String(), "plain text to "+creds.Path) {
+		t.Fatalf("no fallback warning: %s", e.errB)
+	}
+	if p, loc, err := creds.Password(host, "admin"); err != nil || loc != deploysites.InFile || p != "secret" {
+		t.Fatalf("password not saved to file: %q, %v, %v", p, loc, err)
+	}
+	if code := e.run("deploy", "upload", "-f", "ready.xml", host); code != 0 || len(s.Uploads()) != 1 {
+		t.Fatalf("upload with file password: %s", e.errB)
+	}
+	e.out.Reset()
+	if code := e.run("deploy", "sites", "show", host); code != 0 || !strings.Contains(e.out.String(), "Saved password: yes ("+creds.Path+")") {
+		t.Fatalf("show: %s, %s", e.out, e.errB)
+	}
+	e.errB.Reset()
+	if code := e.run("deploy", "sites", "remove", host); code != 0 || strings.Contains(e.errB.String(), "⚠") {
+		t.Fatalf("remove: %s", e.errB)
+	}
+	if _, loc, _ := creds.Password(host, "admin"); loc != "" {
+		t.Fatal("file password not deleted with the site")
 	}
 }

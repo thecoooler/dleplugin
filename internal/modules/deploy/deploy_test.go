@@ -18,6 +18,7 @@ import (
 	"github.com/thecoooler/dleplugin/internal/dleadmin/dleadmintest"
 	"github.com/thecoooler/dleplugin/internal/modules/buildcmd"
 	"github.com/thecoooler/dleplugin/internal/modules/deploy"
+	"github.com/thecoooler/dleplugin/internal/modules/deploy/internal/deploysites"
 )
 
 func TestMain(m *testing.M) {
@@ -35,6 +36,7 @@ type env struct {
 func newEnv(t *testing.T, stdin string, interactive bool) *env {
 	t.Helper()
 	t.Setenv(deploy.PasswordEnv, "")
+	t.Setenv(deploy.CredentialStoreEnv, "")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	e := &env{out: &bytes.Buffer{}, errB: &bytes.Buffer{}, work: t.TempDir()}
@@ -42,6 +44,16 @@ func newEnv(t *testing.T, stdin string, interactive bool) *env {
 	e.rt.SetWorkDir(e.work)
 	e.rt.UI.SetInteractive(interactive)
 	return e
+}
+
+// credentials returns the saved-password store of e in auto mode.
+func (e *env) credentials(t *testing.T) deploysites.Credentials {
+	t.Helper()
+	c, err := deploysites.NewCredentials(filepath.Dir(e.rt.Config.Path()), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
 }
 
 func (e *env) run(args ...string) int {

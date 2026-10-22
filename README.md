@@ -160,8 +160,23 @@ name. With no password variable configured, `DLEPLUGIN_PASSWORD` or a secret
 prompt is used. A password typed or piped during `add`/`edit` is saved in the
 OS credential store (macOS Keychain, Windows Credential Manager, Secret Service
 on Linux) under the service `dleplugin` and the account `LOGIN@HOST`; `remove`
-deletes it. A password from an environment variable is not saved. If the store
-is unavailable, a warning is shown and the password is not remembered.
+deletes it. A password from an environment variable is not saved.
+
+`DLEPLUGIN_CREDENTIAL_STORE` selects where passwords are saved:
+
+| Value            | Behavior                                                       |
+| ---------------- | -------------------------------------------------------------- |
+| `auto` (default) | OS credential store; the credentials file when it is unavailable |
+| `keyring`        | OS credential store only; when unavailable, nothing is saved   |
+| `file`           | credentials file only                                          |
+
+The credentials file is `credentials.yaml` next to the global config
+(`~/.config/dleplugin/credentials.yaml`), keyed by host and login. It holds
+passwords in plain text, protected only by permissions `0600`; dleplugin refuses
+to read it when it is a symlink or other users can access it. In `auto` mode a fallback to the file
+prints a warning; set `DLEPLUGIN_CREDENTIAL_STORE=file` on headless servers
+without a Secret Service to save there directly. `sites show` reports where the
+saved password is.
 
 ```sh
 dleplugin deploy upload                            # choose a saved site or enter a URL
@@ -197,8 +212,8 @@ a login from a saved site satisfies the `--password-stdin` login requirement.
 | `--dry-run`          | log in and look up the plugin, upload nothing            |
 | `--insecure`         | skip TLS certificate verification for this invocation   |
 
-Password precedence: stdin, the selected environment variable, the credential
-store (saved sites only), then a secret prompt. A password typed for a saved
+Password precedence: stdin, the selected environment variable, the saved
+password (credential store or file, saved sites only), then a secret prompt. A password typed for a saved
 site is remembered; a saved password the site rejects is asked for again on a
 terminal and replaced. If a site or flag specifies a variable, an empty value does not fall
 back to `DLEPLUGIN_PASSWORD`; without a terminal it is an error. There is no
