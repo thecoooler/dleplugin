@@ -167,13 +167,13 @@ func (s *Stack) runner() *process.Runner {
 }
 
 // ComposeAttached runs docker compose with stdin and the runner's output
-// streams. Interrupts reach docker compose from the terminal, so ctx
-// cancellation does not kill it (compose stops its containers gracefully).
+// streams. A terminal Ctrl-C reaches docker compose directly, so on ctx
+// cancellation it first gets time to stop its containers gracefully.
 // A non-zero exit returns *process.ExitError.
 func (s *Stack) ComposeAttached(ctx context.Context, stdin io.Reader, args ...string) error {
 	c := s.composeCmd(args...)
-	c.Stdin, c.Stream = stdin, true
-	_, err := s.runner().Run(context.WithoutCancel(ctx), c)
+	c.Stdin, c.Stream, c.Graceful = stdin, true, true
+	_, err := s.runner().Run(ctx, c)
 	return err
 }
 

@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -36,7 +38,17 @@ type Command struct {
 	Stdin io.Reader
 	// Stream inherits the parent's stdout/stderr instead of capturing them.
 	Stream bool
+	// Graceful lets the process stop on its own when ctx is canceled (a
+	// terminal Ctrl-C reaches it directly): it gets SIGTERM after GraceDelay
+	// and is killed KillDelay later. Otherwise cancellation kills it at once.
+	Graceful bool
 }
+
+// Delays of Command.Graceful cancellation.
+var (
+	GraceDelay = 2 * time.Second
+	KillDelay  = 10 * time.Second
+)
 
 // Result is the outcome of a finished command.
 type Result struct {
@@ -72,6 +84,20 @@ func (r *Runner) Run(ctx context.Context, c Command) (*Result, error) {
 		cmd.Env = append(os.Environ(), c.Env...)
 	}
 	cmd.Stdin = c.Stdin
+	var terminated atomic.Bool
+	if c.Graceful {
+		cmd.Cancel = func() error {
+			// Signal is a no-op once Wait has reaped the process.
+			p := cmd.Process
+			time.AfterFunc(GraceDelay, func() {
+				if p.Signal(syscall.SIGTERM) == nil {
+					terminated.Store(true)
+				}
+			})
+			return nil
+		}
+		cmd.WaitDelay = GraceDelay + KillDelay
+	}
 	var stdout, stderr bytes.Buffer
 	if c.Stream {
 		cmd.Stdout, cmd.Stderr = r.options.Out, r.options.Err
@@ -89,7 +115,8 @@ func (r *Runner) Run(ctx context.Context, c Command) (*Result, error) {
 		if !errors.As(err, &ee) {
 			return res, fmt.Errorf("run %s: %w", c.String(), err)
 		}
-		if ctx.Err() != nil {
+		// A graceful process that exited before SIGTERM reports its own status.
+		if ctx.Err() != nil && (!c.Graceful || terminated.Load()) {
 			return res, fmt.Errorf("run %s: %w", c.String(), ctx.Err())
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunOK(t *testing.T) {
@@ -75,5 +76,38 @@ func TestStream(t *testing.T) {
 	}
 	if o.String() != "x\n" {
 		t.Errorf("out = %q", o.String())
+	}
+}
+
+func TestGracefulCancel(t *testing.T) {
+	defer func(grace, kill time.Duration) { GraceDelay, KillDelay = grace, kill }(GraceDelay, KillDelay)
+	GraceDelay, KillDelay = 500*time.Millisecond, time.Second
+	r := NewRunner(Options{})
+	for _, tc := range []struct {
+		name, script string
+		min, max     time.Duration
+	}{
+		// Exits on its own within GraceDelay, as after a terminal Ctrl-C.
+		{"own exit", "sleep 0.1; exit 7", 0, 500 * time.Millisecond},
+		{"terminated", "exec sleep 30", 500 * time.Millisecond, 1400 * time.Millisecond},
+		{"killed", "trap '' TERM; while :; do sleep 0.05; done", 1500 * time.Millisecond, 10 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			time.AfterFunc(50*time.Millisecond, cancel)
+			start := time.Now()
+			_, err := r.Run(ctx, Command{Name: "sh", Args: []string{"-c", tc.script}, Graceful: true})
+			var ee *ExitError
+			if tc.name == "own exit" {
+				if !errors.As(err, &ee) || ee.Result.ExitCode != 7 {
+					t.Fatalf("err = %v", err)
+				}
+			} else if !errors.Is(err, context.Canceled) {
+				t.Fatalf("err = %v", err)
+			}
+			if d := time.Since(start); d < tc.min || d > tc.max {
+				t.Fatalf("took %v", d)
+			}
+		})
 	}
 }
