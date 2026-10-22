@@ -32,6 +32,8 @@ internal/convert/          plugin XML -> dleplugin.yml text
 internal/diff/             XML vs XML diff via convert + system `diff`
 internal/dleadmin/         HTTP client for a DLE admin panel: login, plugin
                            list, plugin upload (dleadmintest: fake server)
+internal/dleinstall/       HTTP client of the standard DLE 11.0+ web
+                           installer (used by test and hosts)
 internal/dockerimg/        tool images built from embedded Dockerfiles
 internal/goldentest/       shared golden fixture update helpers
 internal/modules/initcmd/  the init module: init
@@ -54,12 +56,24 @@ internal/modules/test/internal/dle/
                            symlinks, plugin registry in MySQL, cache clearing
 internal/modules/test/internal/dletest/
                            plugin tests against the DLE trial: download,
-                           automated install (MariaDB in Docker), run site,
+                           install via dleinstall (MariaDB in Docker), run site,
                            bootstrap.php with the xfields shim, Pest command
 internal/modules/check/    the check module: check
 internal/modules/check/internal/check/
                            file patches vs DLE directories: whitespace- and
                            case-insensitive search, missing files, duplicates
+internal/modules/hosts/    the hosts module: hosts up/down/compose/list/add/
+                           remove/protect/path/port/versions/config
+internal/modules/hosts/internal/stack/
+                           Docker stack: embedded files, .env, docker compose,
+                           temporary installer container
+internal/modules/hosts/internal/host/
+                           hosts registry, add/remove, vhosts, protect form
+                           and passwords, HTTP port
+internal/modules/hosts/internal/dist/
+                           clean DLE distributions: inspect, resolve, extract
+internal/modules/hosts/internal/hostconfig/
+                           hosts config ~/.config/dlehost/config.yml
 internal/modules/skills/   the skills module: skills list/install/uninstall
 internal/modules/skills/internal/bundle/
                            embedded skill trees and managed copy lifecycle
@@ -100,7 +114,7 @@ func main() {
 }
 
 func modules() []app.Module {
-	return []app.Module{initcmd.Module(), buildcmd.Module(), convertcmd.Module(), diffcmd.Module(), deploy.Module(), static.Module(), test.Module(), check.Module(), skills.Module()}
+	return []app.Module{initcmd.Module(), buildcmd.Module(), convertcmd.Module(), diffcmd.Module(), deploy.Module(), static.Module(), test.Module(), check.Module(), hosts.Module(), skills.Module()}
 }
 ```
 
@@ -115,7 +129,7 @@ Registration rules:
 - registration results are available via `rt.Modules()` / `rt.ModuleErrors()`;
   module tests must assert that a module registers without errors;
 - top-level commands set `GroupID` to `app.GroupProject`, `app.GroupCheck`,
-  `app.GroupRelease` or `app.GroupAgents`; the root help lists these groups in that order and the
+  `app.GroupRelease`, `app.GroupHosts` or `app.GroupAgents`; the root help lists these groups in that order and the
   commands of a group in registration order. Empty groups are omitted;
   commands without a known group appear under "Additional Commands".
 
@@ -144,6 +158,7 @@ section, available through `rt.CoreConfig()`.
 | plugin root lookup from any subdirectory            | `plugin.FindRoot`, `plugin.FromDir`            |
 | manifest, generated XML (check)                     | `plugin.Plugin.Info()`, `build.XML`            |
 | reading plugin XML / zip (check, deploy)            | `dlexml`                                       |
+| running the DLE web installer (test, hosts)         | `dleinstall.Run`                               |
 | running docker/composer/php/mysql CLIs              | `process.Runner`                               |
 | cache directories, shared composer cache           | `paths.CacheDir`, `paths.ComposerCacheDir`     |
 | relative file args (test, static)                   | `plugin.NormalizeFiles`                        |

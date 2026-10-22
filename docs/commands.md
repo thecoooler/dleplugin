@@ -27,6 +27,14 @@ Check module:
 
 - `dleplugin check`
 
+Hosts module (root help group: `DLE hosts`; see [DLE hosts](hosts.md)):
+
+- `dleplugin hosts up/down`
+- `dleplugin hosts compose [ARGS...]`
+- `dleplugin hosts list/add/remove/path/port/versions`
+- `dleplugin hosts protect`
+- `dleplugin hosts config show/get/set/unset/path`
+
 AI agents module (root help group: `AI agents`):
 
 - `dleplugin skills list`

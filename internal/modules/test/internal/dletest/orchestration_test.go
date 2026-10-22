@@ -465,7 +465,7 @@ func TestInstallBaseFailuresCleanUp(t *testing.T) {
 	for _, tc := range []struct{ name, failure, want string }{
 		{"database", "FAIL_NETWORK", "start install database"},
 		{"dump", "FAIL_DUMP", "dump test database"},
-		{"installer", "", "?action=checkdb"},
+		{"installer", "", "installer checkdb"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := fakeOrchestrationDocker(t)
