@@ -41,25 +41,31 @@ var (
 )
 
 // redact replaces each secret in body, including the forms PHP's
-// json_encode and htmlspecialchars give it in installer responses.
+// htmlspecialchars and json_encode (also combined) give it in installer
+// responses, and with whitespace collapsed as in cleaned-up HTML.
 func redact(body string, secrets ...string) string {
 	var forms []string
 	for _, secret := range secrets {
 		if secret == "" {
 			continue
 		}
-		forms = append(forms, secret, stdhtml.EscapeString(secret),
-			phpHTML.Replace(secret))
-		for _, slash := range []bool{false, true} {
-			for _, unicode := range []bool{false, true} {
-				forms = append(forms, jsonEscape(secret, slash, unicode))
+		for _, plain := range []string{secret, strings.Join(strings.Fields(secret), " ")} {
+			for _, h := range []string{plain, stdhtml.EscapeString(plain), phpHTML.Replace(plain)} {
+				forms = append(forms, h)
+				for _, slash := range []bool{false, true} {
+					for _, unicode := range []bool{false, true} {
+						forms = append(forms, jsonEscape(h, slash, unicode))
+					}
+				}
 			}
 		}
 	}
 	// Longer forms first, so a secret is not replaced inside its escaped form.
 	slices.SortFunc(forms, func(a, b string) int { return len(b) - len(a) })
 	for _, form := range forms {
-		body = strings.ReplaceAll(body, form, "[redacted]")
+		if form != "" {
+			body = strings.ReplaceAll(body, form, "[redacted]")
+		}
 	}
 	return body
 }
@@ -164,6 +170,8 @@ func Run(ctx context.Context, opts Options, log func(string)) error {
 	}
 	// Error responses can echo passwords (e.g. an SQL error). Redact before logging.
 	failure := func(action, body string) error {
+		// Before and after the lossy HTML cleanup, which unescapes entities.
+		body = redact(body, opts.DBPassword, opts.Password)
 		if strings.Contains(strings.ToLower(body), "<html") {
 			body = stdhtml.UnescapeString(tags.ReplaceAllString(scripts.ReplaceAllString(body, " "), " "))
 			body = strings.Join(strings.Fields(body), " ")
