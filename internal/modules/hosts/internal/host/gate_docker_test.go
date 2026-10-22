@@ -637,7 +637,8 @@ func writeTestDist(t *testing.T, dir, version string) {
 	}
 	z := zip.NewWriter(f)
 	for name, data := range map[string]string{
-		"install.php":                fmt.Sprintf("// $config = array('version_id' => %q);\n", version) + testInstallerPHP,
+		// The version comment must follow "<?php": text before it would precede every response.
+		"install.php":                strings.Replace(testInstallerPHP, "<?php\n", fmt.Sprintf("<?php\n// $config = array('version_id' => %q);\n", version), 1),
 		"fixture-version.txt":        version,
 		"engine/data/.keep":          "",
 		"templates/Default/main.tpl": "test template",
