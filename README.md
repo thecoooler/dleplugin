@@ -65,6 +65,7 @@ checks. See [issues](https://github.com/thecoooler/dleplugin/issues) for reports
 | `diff SOURCE1 SOURCE2`          | Compare plugin XML files and projects         |
 | `deploy upload [HOST]`          | Upload the plugin to a DLE site               |
 | `deploy sites`                  | Manage saved deployment sites                 |
+| `hosts ...`                     | Run DLE sites in a local Docker stack         |
 | `skills list/install/uninstall` | Manage bundled Codex / Claude Code skills      |
 
 Global flag: `-v/--verbose`.
@@ -293,6 +294,21 @@ DLE 17.0 (/home/me/dists/17.0): ERROR
 ```
 
 The exit code is 1 when a patch does not apply to some directory.
+
+### hosts
+
+Runs DLE sites in a local Docker stack (Apache, PHP 8.5/7.4, MariaDB) built
+from files embedded in the binary: creates sites from clean DLE distributions
+through the standard installer, puts an optional password form in front of
+them, and changes the shared HTTP port. It replaces the standalone `dlehost`
+CLI and keeps its config and data. See [DLE hosts](docs/hosts.md).
+
+```sh
+dleplugin hosts up
+dleplugin hosts config set dists_dir ~/dle/dists
+dleplugin hosts add shop --dle 21.0     # http://shop.localhost/
+dleplugin hosts list
+```
 
 ## Development
 
