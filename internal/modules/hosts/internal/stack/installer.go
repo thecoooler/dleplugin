@@ -9,10 +9,11 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/thecoooler/dleplugin/internal/process"
 )
 
 // WithInstaller serves staging in a disposable PHP container on a random loopback
@@ -34,9 +35,10 @@ func (s *Stack) WithInstaller(ctx context.Context, staging, php string, run func
 	}
 	name := "dlehost-install-" + hex.EncodeToString(token[:])
 	defer func() {
-		out, stopErr := exec.Command("docker", "rm", "-f", name).CombinedOutput()
-		if stopErr != nil && !strings.Contains(string(out), "No such container") {
-			err = errors.Join(err, fmt.Errorf("remove the installer container: %s", out))
+		// Removed even when ctx is canceled.
+		res, stopErr := s.runner().Run(context.WithoutCancel(ctx), process.Command{Name: "docker", Args: []string{"rm", "-f", name}})
+		if stopErr != nil && !strings.Contains(string(res.Stderr), "No such container") {
+			err = errors.Join(err, fmt.Errorf("remove the installer container: %w", stopErr))
 		}
 	}()
 	if err := s.Compose(nil, "run", "--rm", "--no-deps", "-d", "--name", name,
@@ -46,11 +48,10 @@ func (s *Stack) WithInstaller(ctx context.Context, staging, php string, run func
 		"php"+strings.ReplaceAll(php, ".", ""), "-S", "0.0.0.0:8080", "-t", "/install"); err != nil {
 		return err
 	}
-	out, err := exec.Command("docker", "port", name, "8080/tcp").Output()
+	address, err := s.runner().Output(ctx, process.Command{Name: "docker", Args: []string{"port", name, "8080/tcp"}})
 	if err != nil {
 		return fmt.Errorf("installer port: %w", err)
 	}
-	address := strings.TrimSpace(string(out))
 	host, _, err := net.SplitHostPort(address)
 	if err != nil || host != "127.0.0.1" {
 		return fmt.Errorf("unexpected installer address: %q", address)

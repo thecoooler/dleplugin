@@ -2,6 +2,7 @@ package host
 
 import (
 	"archive/zip"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -182,7 +183,7 @@ func installerTestStack(t *testing.T) *stack.Stack {
 	}
 	t.Cleanup(func() {
 		if t.Failed() {
-			_ = s.ComposeAttached("logs", "--tail", "30", "apache", "php85")
+			_ = s.ComposeAttached(context.Background(), nil, "logs", "--tail", "30", "apache", "php85")
 		}
 		_ = s.Compose(nil, "down", "--volumes", "--rmi", "local")
 		_ = exec.Command("docker", "run", "--rm", "--network", "none", "-v", dir+":/stack", "--entrypoint", "rm", "mariadb:11.4", "-rf", "/stack/data/mariadb").Run()

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,6 +21,7 @@ import (
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/host"
 	config "github.com/thecoooler/dleplugin/internal/modules/hosts/internal/hostconfig"
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/stack"
+	"github.com/thecoooler/dleplugin/internal/process"
 )
 
 type module struct{}
@@ -59,7 +59,7 @@ func env(rt *app.Runtime) (*config.Config, *stack.Stack, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	s, err := openStack(cfg)
+	s, err := openStack(rt, cfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -70,15 +70,15 @@ func env(rt *app.Runtime) (*config.Config, *stack.Stack, error) {
 }
 
 // stackOnly is env without the hint about dleplugin hosts up.
-func stackOnly() (*stack.Stack, error) {
+func stackOnly(rt *app.Runtime) (*stack.Stack, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
 	}
-	return openStack(cfg)
+	return openStack(rt, cfg)
 }
 
-func openStack(cfg *config.Config) (*stack.Stack, error) {
+func openStack(rt *app.Runtime, cfg *config.Config) (*stack.Stack, error) {
 	if err := cfg.ValidateRouting(); err != nil {
 		return nil, err
 	}
@@ -87,6 +87,7 @@ func openStack(cfg *config.Config) (*stack.Stack, error) {
 		return nil, err
 	}
 	s.BaseDomain, s.ExternalOrigin = cfg.BaseDomain, cfg.ExternalOrigin
+	s.Exec = rt.Exec
 	return s, nil
 }
 
@@ -105,7 +106,7 @@ func upCmd(rt *app.Runtime) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s, err := openStack(cfg)
+			s, err := openStack(rt, cfg)
 			if err != nil {
 				return err
 			}
@@ -121,7 +122,7 @@ func upCmd(rt *app.Runtime) *cobra.Command {
 				// configs are mounted into the containers; compose does not see their changes
 				upArgs = append(upArgs, "--force-recreate")
 			}
-			if err := s.ComposeAttached(upArgs...); err != nil {
+			if err := s.ComposeAttached(cmd.Context(), nil, upArgs...); err != nil {
 				return err
 			}
 			if err := host.ApplyProtect(s, protectSettings(cfg), protectSettings(cfg), func() error { return nil }, stepper(rt)); err != nil {
@@ -142,11 +143,11 @@ func downCmd(rt *app.Runtime) *cobra.Command {
 		Short: "Stop the Docker stack (sites and databases are kept)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := stackOnly()
+			s, err := stackOnly(rt)
 			if err != nil {
 				return err
 			}
-			return s.ComposeAttached("down")
+			return s.ComposeAttached(cmd.Context(), nil, "down")
 		},
 	}
 }
@@ -158,14 +159,14 @@ func composeCmd(rt *app.Runtime) *cobra.Command {
 		Example:            "  dleplugin hosts compose ps\n  dleplugin hosts compose logs -f apache",
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := stackOnly()
+			s, err := stackOnly(rt)
 			if err != nil {
 				return err
 			}
-			err = s.ComposeAttached(args...)
-			var exit *exec.ExitError
+			err = s.ComposeAttached(cmd.Context(), rt.UI.In, args...)
+			var exit *process.ExitError
 			if errors.As(err, &exit) {
-				return &app.SilentExit{Code: exit.ExitCode()}
+				return &app.SilentExit{Code: exit.Result.ExitCode}
 			}
 			return err
 		},
@@ -454,7 +455,7 @@ func pathCmd(rt *app.Runtime) *cobra.Command {
 			"  cd \"$(dleplugin hosts path shop)\"",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := stackOnly()
+			s, err := stackOnly(rt)
 			if err != nil {
 				return err
 			}
@@ -636,7 +637,7 @@ func updateConfig(rt *app.Runtime, name, value string) error {
 	}
 	if name == "protect" || name == "protect_session_ttl" {
 		// Host vhosts first, then the config; rolled back on error.
-		s, err := openStack(cfg)
+		s, err := openStack(rt, cfg)
 		if err != nil {
 			return err
 		}

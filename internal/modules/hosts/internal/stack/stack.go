@@ -3,16 +3,17 @@ package stack
 
 import (
 	"bufio"
-	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/thecoooler/dleplugin/internal/process"
 )
 
 // Stack is a deployed Docker stack: www/, config/apache/sites/, docker-compose.yml.
@@ -23,6 +24,8 @@ type Stack struct {
 	Env            map[string]string
 	// Updated reports that the stack service files were just created or updated.
 	Updated bool
+	// Exec runs docker; nil uses a runner writing to os.Stdout and os.Stderr.
+	Exec *process.Runner
 }
 
 // Open deploys the embedded stack into dir and reads its .env. The directory
@@ -140,30 +143,38 @@ func (s *Stack) LocalHostURL(domain string) string {
 
 // Compose runs docker compose; output is shown only on error.
 func (s *Stack) Compose(stdin io.Reader, args ...string) error {
-	cmd := s.composeCmd(args...)
-	cmd.Stdin = stdin
-	var stderr bytes.Buffer
-	cmd.Stdout = io.Discard
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker compose %s: %s", args[0], errorLines(stderr.String(), err))
+	c := s.composeCmd(args...)
+	c.Stdin = stdin
+	res, err := s.runner().Run(context.Background(), c)
+	var exit *process.ExitError
+	if errors.As(err, &exit) {
+		return fmt.Errorf("docker compose %s: %s", args[0], errorLines(string(res.Stderr), err))
 	}
-	return nil
+	return err
 }
 
-func (s *Stack) composeCmd(args ...string) *exec.Cmd {
-	cmd := exec.Command("docker", append([]string{"compose",
+func (s *Stack) composeCmd(args ...string) process.Command {
+	return process.Command{Name: "docker", Args: append([]string{"compose",
 		"--project-directory", s.Dir,
-		"-f", filepath.Join(s.Dir, "docker-compose.yml")}, args...)...)
-	cmd.Dir = s.Dir
-	return cmd
+		"-f", filepath.Join(s.Dir, "docker-compose.yml")}, args...), Dir: s.Dir}
 }
 
-// ComposeAttached runs docker compose attached to the terminal.
-func (s *Stack) ComposeAttached(args ...string) error {
-	cmd := s.composeCmd(args...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	return cmd.Run()
+func (s *Stack) runner() *process.Runner {
+	if s.Exec == nil {
+		s.Exec = process.NewRunner(process.Options{Out: os.Stdout, Err: os.Stderr})
+	}
+	return s.Exec
+}
+
+// ComposeAttached runs docker compose with stdin and the runner's output
+// streams. Interrupts reach docker compose from the terminal, so ctx
+// cancellation does not kill it (compose stops its containers gracefully).
+// A non-zero exit returns *process.ExitError.
+func (s *Stack) ComposeAttached(ctx context.Context, stdin io.Reader, args ...string) error {
+	c := s.composeCmd(args...)
+	c.Stdin, c.Stream = stdin, true
+	_, err := s.runner().Run(context.WithoutCancel(ctx), c)
+	return err
 }
 
 // errorLines keeps only the error lines of docker compose output

@@ -64,17 +64,21 @@ func TestCredentialPrecedence(t *testing.T) {
 func TestOpenStackRouting(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "stack")
 	t.Setenv("DLEHOST_DIR", dir)
+	rt := moduletest.NewEnv(t, "", Module()).RT
 	cfg := &config.Config{BaseDomain: "dle.icooler.opik.net", ExternalOrigin: "https://other.test"}
-	if _, err := openStack(cfg); err == nil {
+	if _, err := openStack(rt, cfg); err == nil {
 		t.Fatal("accepted inconsistent routing")
 	}
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatal("invalid routing prepared the stack")
 	}
 	cfg.ExternalOrigin = "https://dle.icooler.opik.net"
-	s, err := openStack(cfg)
+	s, err := openStack(rt, cfg)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if s.Exec != rt.Exec {
+		t.Fatal("stack does not use the runtime runner")
 	}
 	if got := s.HostURL(s.Domain("shop")); got != "https://shop.dle.icooler.opik.net/" {
 		t.Fatalf("URL=%s", got)
