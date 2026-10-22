@@ -1,0 +1,75 @@
+name: dle
+
+x-php: &php
+  restart: unless-stopped
+  volumes:
+    - ./www:/var/www   # путь должен совпадать с apache
+    - ./config/php/php.ini:/usr/local/etc/php/conf.d/zz-custom.ini:ro
+    - ./config/php/fpm.conf:/usr/local/etc/php-fpm.d/zz-custom.conf:ro
+    - ./gate:/opt/dlehost/gate:ro         # форма входа dlehost protect
+    - ./data/gate:/var/lib/dlehost/gate   # её сессии
+    - ./data/protect:/opt/dlehost/protect:ro # bcrypt-хеши protect
+  environment:
+    DB_HOST: db
+    DB_NAME: ${DB_NAME}
+    DB_USER: ${DB_USER}
+    DB_PASSWORD: ${DB_PASSWORD}
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  apache:
+    build:
+      context: ./docker/apache
+      args: { UID: "${UID:-1000}", GID: "${GID:-1000}" }
+    container_name: ${COMPOSE_PROJECT_NAME}-apache
+    restart: unless-stopped
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:${HTTP_PORT:-80}:80"
+    volumes:
+      - ./www:/var/www                                   # файлы сайтов
+      - ./config/apache/sites:/etc/apache2/sites-enabled # виртуальные хосты
+      - ./logs/apache:/var/log/apache2
+      - ./gate:/opt/dlehost/gate:ro                      # форма входа dlehost protect
+      - ./data/gate:/var/lib/dlehost/gate:ro             # её сессии (только проверка)
+    environment:
+      TZ: UTC # срок сессии сверяется с %{TIME}, форма пишет его в UTC
+    depends_on: [php85, php74]
+
+  php85:
+    <<: *php
+    build:
+      context: ./docker/php
+      args: { PHP_VERSION: "8.5.12", UID: "${UID:-1000}", GID: "${GID:-1000}" }
+    container_name: ${COMPOSE_PROJECT_NAME}-php85
+
+  # PHP 7.4 — EOL и уязвим к CVE-2026-109618/109619 (RCE), исправленного
+  # официального образа нет. Не открывайте стек в интернет, см. README.
+  php74:
+    <<: *php
+    build:
+      context: ./docker/php
+      args: { PHP_VERSION: "7.4", UID: "${UID:-1000}", GID: "${GID:-1000}" }
+    container_name: ${COMPOSE_PROJECT_NAME}-php74
+
+  db:
+    image: mariadb:${MARIADB_VERSION:-11.4}
+    container_name: ${COMPOSE_PROJECT_NAME}-db
+    restart: unless-stopped
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:${DB_PORT:-3306}:3306"
+    volumes:
+      - ./data/mariadb:/var/lib/mysql         # данные БД
+      - ./config/mariadb:/etc/mysql/conf.d:ro # конфигурация
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MARIADB_DATABASE: ${DB_NAME}
+      MARIADB_USER: ${DB_USER}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
