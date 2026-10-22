@@ -31,7 +31,7 @@ func registryPaths(rt *app.Runtime) (global, project string, err error) {
 func sitesCommand(rt *app.Runtime) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "sites", Short: "Manage saved DLE sites",
-		Long: "Manage sites in the project's dleplugin-deploy.yaml. Use --global for the file next to the global config. Passwords are never written to the file: a password checked by add or edit is saved in the OS credential store, unless it comes from --password-env, which saves only an environment variable name.",
+		Long: "Manage sites in the project's dleplugin-deploy.yaml. Use --global for the file next to the global config. Passwords are never written to the file: a password checked by add or edit is saved in the OS credential store, or in credentials.yaml next to the global config when the store is unavailable or " + CredentialStoreEnv + "=file, unless it comes from --password-env, which saves only an environment variable name.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 	}
@@ -94,12 +94,18 @@ func showSiteCommand(rt *app.Runtime) *cobra.Command {
 			if env == "" {
 				env = PasswordEnv
 			}
+			c, err := credentials(rt)
+			if err != nil {
+				return err
+			}
 			saved := "no"
-			if _, ok, err := deploysites.Password(host, e.Site.Login); err != nil {
+			if _, loc, err := c.Password(host, e.Site.Login); err != nil {
 				saved = "unavailable"
 				rt.UI.Debugf("%v", err)
-			} else if ok {
-				saved = "yes"
+			} else if loc == deploysites.InFile {
+				saved = "yes (" + c.Path + ")"
+			} else if loc != "" {
+				saved = "yes (OS credential store)"
 			}
 			rt.UI.Infof("Host: %s\nAdmin URL: %s\nLogin: %s\nPassword environment: %s\nSaved password: %s\nSource: %s (%s)", host, admin, e.Site.Login, env, saved, e.Scope, e.Path)
 			return nil
@@ -241,7 +247,11 @@ func forgetPassword(rt *app.Runtime, host, login string) {
 			return
 		}
 	}
-	if err := deploysites.DeletePassword(host, login); err != nil {
+	c, err := credentials(rt)
+	if err == nil {
+		err = c.DeletePassword(host, login)
+	}
+	if err != nil {
 		rt.UI.Warningf("%v", err)
 	}
 }
