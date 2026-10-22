@@ -163,7 +163,7 @@ func composeCmd(rt *app.Runtime) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			err = s.ComposeAttached(cmd.Context(), rt.UI.In, args...)
+			err = s.ComposeAttached(cmd.Context(), rt.UI.In, takeInheritedFlags(cmd, args)...)
 			var exit *process.ExitError
 			if errors.As(err, &exit) {
 				return &app.SilentExit{Code: exit.Result.ExitCode}
@@ -171,6 +171,38 @@ func composeCmd(rt *app.Runtime) *cobra.Command {
 			return err
 		},
 	}
+}
+
+// takeInheritedFlags applies the leading dleplugin flags (such as -v) that
+// cobra leaves in args when flag parsing is disabled and returns the rest.
+// Only flags without a value are taken; anything else belongs to compose.
+func takeInheritedFlags(cmd *cobra.Command, args []string) []string {
+	flags := cmd.InheritedFlags()
+	for len(args) > 0 {
+		arg := args[0]
+		name, value, hasValue := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+		f := flags.Lookup(name)
+		if !strings.HasPrefix(arg, "--") {
+			f, hasValue = nil, false
+			if len(arg) == 2 && arg[0] == '-' && arg[1] != '-' {
+				f = flags.ShorthandLookup(arg[1:])
+			}
+		}
+		if f == nil || f.NoOptDefVal == "" {
+			break
+		}
+		if !hasValue {
+			value = f.NoOptDefVal
+		}
+		if err := cmd.Flags().Set(f.Name, value); err != nil {
+			break
+		}
+		args = args[1:]
+	}
+	if pre := cmd.Root().PersistentPreRun; pre != nil {
+		pre(cmd, args)
+	}
+	return args
 }
 
 func listCmd(rt *app.Runtime) *cobra.Command {

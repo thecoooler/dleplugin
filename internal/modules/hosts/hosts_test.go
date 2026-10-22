@@ -162,3 +162,34 @@ func TestProtectPasswordCLI(t *testing.T) {
 		t.Fatal(out)
 	}
 }
+
+func TestComposePassthrough(t *testing.T) {
+	bin := t.TempDir()
+	script := "#!/bin/sh\nshift 5\nprintf '%s\\n' \"$@\"\nexit 3\n" // drops compose --project-directory DIR -f FILE
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("DLEHOST_DIR", filepath.Join(t.TempDir(), "stack"))
+	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	for _, tc := range []struct {
+		args    []string
+		want    string
+		verbose bool
+	}{
+		{[]string{"-v", "hosts", "compose", "ps"}, "ps\n", true},
+		{[]string{"hosts", "compose", "--verbose", "logs", "-f"}, "logs\n-f\n", true},
+		{[]string{"hosts", "compose", "-f", "x.yml", "ps", "-v"}, "-f\nx.yml\nps\n-v\n", false},
+	} {
+		e := moduletest.NewEnv(t, "", Module())
+		if code := e.Run(tc.args...); code != 3 {
+			t.Fatalf("%v: exit %d: %s", tc.args, code, e.ErrB.String())
+		}
+		if got := e.Out.String(); got != tc.want {
+			t.Errorf("%v: compose args %q, want %q", tc.args, got, tc.want)
+		}
+		if e.RT.UI.Verbose() != tc.verbose {
+			t.Errorf("%v: verbose = %v", tc.args, e.RT.UI.Verbose())
+		}
+	}
+}
