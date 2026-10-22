@@ -12,7 +12,7 @@ import (
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/dist"
 )
 
-// DLEHOST_TEST_DISTS=/path/to/dists go test ./internal/host -run TestInstallerMatrix -v -timeout 20m
+// DLEHOST_TEST_DISTS=/path/to/dists go test ./internal/modules/hosts/internal/host -run TestInstallerMatrix -v -timeout 20m
 func TestInstallerMatrix(t *testing.T) {
 	dir := os.Getenv("DLEHOST_TEST_DISTS")
 	if dir == "" {

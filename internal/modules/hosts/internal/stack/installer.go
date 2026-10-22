@@ -36,7 +36,7 @@ func (s *Stack) WithInstaller(ctx context.Context, staging, php string, run func
 	defer func() {
 		out, stopErr := exec.Command("docker", "rm", "-f", name).CombinedOutput()
 		if stopErr != nil && !strings.Contains(string(out), "No such container") {
-			err = errors.Join(err, fmt.Errorf("удаление контейнера установщика: %s", out))
+			err = errors.Join(err, fmt.Errorf("remove the installer container: %s", out))
 		}
 	}()
 	if err := s.Compose(nil, "run", "--rm", "--no-deps", "-d", "--name", name,
@@ -48,12 +48,12 @@ func (s *Stack) WithInstaller(ctx context.Context, staging, php string, run func
 	}
 	out, err := exec.Command("docker", "port", name, "8080/tcp").Output()
 	if err != nil {
-		return fmt.Errorf("порт установщика: %w", err)
+		return fmt.Errorf("installer port: %w", err)
 	}
 	address := strings.TrimSpace(string(out))
 	host, _, err := net.SplitHostPort(address)
 	if err != nil || host != "127.0.0.1" {
-		return fmt.Errorf("неожиданный адрес установщика: %q", address)
+		return fmt.Errorf("unexpected installer address: %q", address)
 	}
 	// Docker's port proxy can accept TCP before PHP starts listening. Wait for a
 	// static HTTP response without running PHP or retrying installation requests.
@@ -80,7 +80,7 @@ func (s *Stack) WithInstaller(ctx context.Context, staging, php string, run func
 			err = fmt.Errorf("HTTP %d", resp.StatusCode)
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("PHP установщика не ответил на HTTP-проверку готовности: %v", err)
+			return fmt.Errorf("installer PHP did not answer the HTTP readiness check: %v", err)
 		}
 		select {
 		case <-ctx.Done():

@@ -16,24 +16,24 @@ import (
 	"strings"
 )
 
-// Файлы docker-стека встроены в бинарник и раскладываются в каталог стека
-// при первом запуске. Файлы из files/www/ — заготовки: пишутся один раз и
-// дальше принадлежат пользователю. Остальные — служебные: при обновлении
-// бинарника перезаписываются, а исчезнувшие из новой версии удаляются.
+// The Docker stack files are embedded in the binary and written to the stack
+// directory on first run. Files from files/www/ are seeds: written once and
+// then owned by the user. The rest are service files: overwritten when the
+// binary is updated, and removed when a new version no longer has them.
 //
 //go:embed files
 var stackFS embed.FS
 
 const (
 	stackRoot = "files"
-	// stackManifest хранит хеш служебных файлов и их список.
+	// stackManifest holds the hash of the service files and their list.
 	stackManifest = ".dlehost-stack"
-	// stackApplied хранит хеш служебных файлов, с которыми последний раз
-	// выполнялся dlehost up.
+	// stackApplied holds the hash of the service files the last hosts up
+	// ran with.
 	stackApplied = ".dlehost-applied"
 )
 
-// DefaultDir — $XDG_DATA_HOME/dlehost, по умолчанию ~/.local/share/dlehost.
+// DefaultDir is $XDG_DATA_HOME/dlehost, by default ~/.local/share/dlehost.
 func DefaultDir() (string, error) {
 	if dir := os.Getenv("XDG_DATA_HOME"); dir != "" {
 		return filepath.Join(dir, "dlehost"), nil
@@ -46,9 +46,9 @@ func DefaultDir() (string, error) {
 }
 
 type stackFile struct {
-	rel  string // путь относительно каталога стека, через "/"
+	rel  string // path relative to the stack directory, with "/"
 	data []byte
-	seed bool // заготовка в www/
+	seed bool // seed in www/
 }
 
 func embeddedStack() ([]stackFile, error) {
@@ -69,8 +69,8 @@ func embeddedStack() ([]stackFile, error) {
 	return files, err
 }
 
-// ensure создаёт или обновляет стек в dir и возвращает true,
-// если служебные файлы были (пере)записаны.
+// ensure creates or updates the stack in dir and returns true when the
+// service files were (re)written.
 func ensure(dir string) (bool, error) {
 	files, err := embeddedStack()
 	if err != nil {
@@ -131,10 +131,10 @@ func ensure(dir string) (bool, error) {
 	return true, os.WriteFile(manifestPath, []byte(manifest), 0o644)
 }
 
-// Pending сообщает, что служебные файлы изменились после последнего
-// dlehost up. Правки php.ini, my.cnf и vhost'ов compose сам не замечает:
-// контейнеры нужно пересоздать. hash передаётся в MarkApplied после up,
-// чтобы не отметить применённой версию, обновлённую во время up.
+// Pending reports that the service files changed after the last hosts up.
+// Compose does not notice edits of php.ini, my.cnf and vhosts by itself: the
+// containers must be recreated. hash is passed to MarkApplied after up so
+// that a version updated during up is not marked as applied.
 func (s *Stack) Pending() (hash string, pending bool, err error) {
 	hash, _, err = readStackManifest(filepath.Join(s.Dir, stackManifest))
 	if err != nil {
@@ -147,7 +147,7 @@ func (s *Stack) Pending() (hash string, pending bool, err error) {
 	return hash, strings.TrimSpace(string(applied)) != hash, nil
 }
 
-// MarkApplied запоминает, что служебные файлы с хешем hash применены.
+// MarkApplied records that the service files with hash were applied.
 func (s *Stack) MarkApplied(hash string) error {
 	return os.WriteFile(filepath.Join(s.Dir, stackApplied), []byte(hash+"\n"), 0o644)
 }
@@ -162,7 +162,7 @@ func readStackManifest(p string) (hash string, files []string, err error) {
 	}
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	for _, rel := range lines[1:] {
-		// не даём манифесту указать на файлы вне стека
+		// keep the manifest from pointing outside the stack
 		if rel = strings.TrimSpace(rel); filepath.IsLocal(filepath.FromSlash(rel)) {
 			files = append(files, rel)
 		}
@@ -170,15 +170,15 @@ func readStackManifest(p string) (hash string, files []string, err error) {
 	return strings.TrimSpace(lines[0]), files, nil
 }
 
-// defaultDotEnv — ключи нового .env по порядку; "" — пустая строка, "#…" — комментарий.
+// defaultDotEnv lists the keys of a new .env in order; "" is an empty line, "#…" a comment.
 var defaultDotEnv = []struct{ key, value string }{
-	{"#", "Создано dlehost; файл не перезаписывается при обновлении"},
-	{"#", "Значение по умолчанию для нового .env можно задать переменной DLEHOST_<КЛЮЧ>"},
-	{"#", "Имя проекта docker compose и префикс имён контейнеров"},
+	{"#", "Created by dleplugin hosts; not overwritten on updates"},
+	{"#", "Defaults of a new .env can be set with DLEHOST_<KEY> variables"},
+	{"#", "docker compose project name and container name prefix"},
 	{"COMPOSE_PROJECT_NAME", "dle"},
 	{"MARIADB_VERSION", "11.4"},
 	{"", ""},
-	{"#", "Адрес для портов apache и MariaDB; 127.0.0.1 — только с этой машины"},
+	{"#", "Address of the apache and MariaDB ports; 127.0.0.1 allows this machine only"},
 	{"BIND_ADDRESS", "0.0.0.0"},
 	{"HTTP_PORT", "80"},
 	{"DB_PORT", "3307"},
@@ -188,19 +188,19 @@ var defaultDotEnv = []struct{ key, value string }{
 	{"DB_USER", "dle"},
 	{"DB_PASSWORD", "dle"},
 	{"", ""},
-	{"#", "Владелец файлов в www/ внутри контейнеров"},
+	{"#", "Owner of the www/ files inside the containers"},
 	{"UID", ""},
 	{"GID", ""},
 }
 
-// writeDefaultDotEnv создаёт .env стека, если его нет. UID/GID — текущего
-// пользователя, чтобы файлы в www/ принадлежали ему.
+// writeDefaultDotEnv creates the stack .env when missing. UID/GID are the
+// current user's, so that the www/ files belong to them.
 func writeDefaultDotEnv(p string) error {
 	if _, err := os.Stat(p); err == nil || !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	uid, gid := os.Getuid(), os.Getgid()
-	// Windows (-1) или root: php-fpm не запускает пул от UID/GID 0
+	// Windows (-1) or root: php-fpm does not run a pool as UID/GID 0
 	if uid <= 0 || gid <= 0 {
 		uid, gid = 1000, 1000
 	}
@@ -229,20 +229,20 @@ func writeDefaultDotEnv(p string) error {
 		}
 		b.WriteString(kv.key + "=" + value + "\n")
 	}
-	// в .env пароли БД
+	// .env holds database passwords
 	return os.WriteFile(p, []byte(b.String()), 0o600)
 }
 
 var plainDotEnvValue = regexp.MustCompile(`^[A-Za-z0-9_./:@+,-]*$`)
 
-// dotEnvValue записывает значение так, чтобы docker compose прочитал его
-// буквально: без подстановки ${…} и обрезки по #.
+// dotEnvValue quotes a value so that docker compose reads it literally:
+// without ${…} interpolation or truncation at #.
 func dotEnvValue(v string) (string, error) {
 	if plainDotEnvValue.MatchString(v) {
 		return v, nil
 	}
 	if strings.ContainsAny(v, "'\n\r") {
-		return "", errors.New("значение не должно содержать одинарную кавычку или перевод строки")
+		return "", errors.New("the value must not contain a single quote or a line break")
 	}
 	return "'" + v + "'", nil
 }

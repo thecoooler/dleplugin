@@ -22,13 +22,13 @@ import (
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/stack"
 )
 
-// TestGateDocker поднимает отдельный docker-стек dlehost (свой compose-проект,
-// временный каталог, порты только на 127.0.0.1) и проверяет форму входа через
-// настоящие apache, php-fpm и MariaDB. Рабочий стек не затрагивается.
-// Запуск: DLEHOST_TEST_DOCKER=1 go test ./internal/host -run TestGateDocker -v
+// TestGateDocker starts a separate hosts Docker stack (own compose project,
+// temporary directory, ports on 127.0.0.1 only) and checks the login form
+// through real apache, php-fpm and MariaDB. The working stack is not touched.
+// Run: DLEPLUGIN_DOCKER_TEST=1 go test ./internal/modules/hosts/internal/host -run TestGateDocker -v
 func TestGateDocker(t *testing.T) {
-	if os.Getenv("DLEHOST_TEST_DOCKER") == "" {
-		t.Skip("set DLEHOST_TEST_DOCKER=1 to run the isolated Docker gate test")
+	if os.Getenv("DLEPLUGIN_DOCKER_TEST") != "1" {
+		t.Skip("set DLEPLUGIN_DOCKER_TEST=1 to run the isolated Docker gate test")
 	}
 	dir, err := os.MkdirTemp("", "dlehost-gate-")
 	if err != nil {
@@ -55,7 +55,7 @@ func TestGateDocker(t *testing.T) {
 			t.Logf("compose logs:\n%s", out)
 		}
 		_ = s.Compose(nil, "down", "--volumes", "--rmi", "local")
-		// data/mariadb принадлежит пользователю контейнера.
+		// data/mariadb belongs to the container user.
 		_ = exec.Command("docker", "run", "--rm", "--network", "none", "-v", dir+":/stack", "--entrypoint", "rm", "mariadb:11.4", "-rf", "/stack/data/mariadb").Run()
 		_ = os.RemoveAll(dir)
 	})
@@ -81,7 +81,7 @@ func TestGateDocker(t *testing.T) {
 			t.Fatalf("add %s: %v", name, err)
 		}
 	}
-	// Разные версии DLE и PHP используют один независимый от DLE механизм.
+	// Different DLE and PHP versions use one DLE-independent mechanism.
 	add("shop", "21.0", "8.5", "on", false, true)
 	add("legacy", "11.0", "7.4", "default", false, false)
 	add("open", "21.0", "8.5", "off", false, false)
@@ -109,11 +109,11 @@ func TestGateDocker(t *testing.T) {
 			"/__dlehost/%2e%2e/admin.php", "/nonexistent", "/__DLEHOST/login"} {
 			c.expectGate(shop, path)
 		}
-		// Адреса автохостов того же каталога закрыты так же.
+		// Auto host addresses of the same directory are closed the same way.
 		for _, alias := range []string{"shop.localhost", "shop.php74.localhost", "shop.php85.localhost", "SHOP.Localhost"} {
 			c.expectGate(alias, "/style.css")
 		}
-		// POST и подделанные заголовки не открывают сайт.
+		// POST and forged headers do not open the site.
 		r := c.do(shop, http.MethodPost, "/admin.php", url.Values{"x": {"1"}}, map[string]string{
 			"X-Forwarded-For": "127.0.0.1", "X-Forwarded-Proto": "https", "Authorization": "Basic b3duZXI6c2hvcC1zZWNyZXQ=",
 			"X-Original-URL": "/__dlehost/login", "X-Rewrite-URL": "/__dlehost/login",
@@ -189,11 +189,11 @@ func TestGateDocker(t *testing.T) {
 		for path, want := range map[string]string{"/": "php:index.php", "/admin.php": "admin:ok", "/style.css": "css:ok", "/uploads/x.txt": "upload:ok", "/free": "css:ok"} {
 			c.expectOKCookie(shop, path, session, want)
 		}
-		// Ограничения .htaccess сайта сохраняются и после входа.
+		// The site .htaccess restrictions still apply after login.
 		if r := c.do(shop, http.MethodGet, "/engine/secret.txt", nil, map[string]string{"Cookie": session}); r.code != http.StatusForbidden {
 			t.Fatalf(".htaccess deny weakened: %d", r.code)
 		}
-		// Собственные сессии PHP/DLE работают рядом с cookie формы.
+		// Own PHP/DLE sessions work next to the form cookie.
 		first := c.do(shop, http.MethodGet, "/", nil, map[string]string{"Cookie": session})
 		php := first.cookie("PHPSESSID")
 		if php == nil {
@@ -203,9 +203,9 @@ func TestGateDocker(t *testing.T) {
 		if second.body != "php:index.php:2" {
 			t.Fatalf("PHP session: %q", second.body)
 		}
-		// Сессия не подходит после подмены срока в cookie.
+		// A session does not match after the expiry in the cookie is forged.
 		c.expectGateCookie(shop, "/", "__Host-dlehost_gate=20991231000000"+cookie.Value[14:])
-		// Уже вошедший пользователь со страницы формы возвращается на сайт.
+		// An already logged-in user is sent from the form page back to the site.
 		if r := c.do(shop, http.MethodGet, "/__dlehost/login?return=/style.css", nil, map[string]string{"Cookie": session}); r.code != http.StatusSeeOther || r.location != "/style.css" {
 			t.Fatalf("logged-in form: %d %q", r.code, r.location)
 		}
@@ -244,7 +244,7 @@ func TestGateDocker(t *testing.T) {
 		c.expectGateCookie(shop, "/style.css", session)
 	})
 
-	// login входит в хост и возвращает cookie сессии; https — через proxy.
+	// login logs into the host and returns the session cookie; https goes through the proxy.
 	login := func(t *testing.T, host, password string, https bool) *http.Cookie {
 		t.Helper()
 		proto, csrfName, name := "", "dlehost_gate_csrf", "dlehost_gate"
@@ -284,12 +284,12 @@ func TestGateDocker(t *testing.T) {
 
 	t.Run("cookie bound to scheme, logout ends both", func(t *testing.T) {
 		c.t = t
-		// Вход по HTTP через локальный алиас даёт обычную cookie.
+		// HTTP login through a local alias yields a plain cookie.
 		plain := login(t, "shop.localhost", "shop-secret", false)
 		if r := get("shop.localhost", "dlehost_gate="+plain.Value, ""); r.code != http.StatusOK {
 			t.Fatalf("http alias: %d", r.code)
 		}
-		// HTTPS не принимает не-Secure cookie вместо __Host-.
+		// HTTPS does not accept a non-Secure cookie instead of __Host-.
 		if r := get(shop, "dlehost_gate="+plain.Value, "https"); r.code != http.StatusFound {
 			t.Fatalf("plain cookie over https: %d", r.code)
 		}
@@ -307,7 +307,7 @@ func TestGateDocker(t *testing.T) {
 				t.Fatalf("https %q: %d, want %d", cookie, r.code, want)
 			}
 		}
-		// Выход по HTTPS с обеими cookie завершает обе сессии и стирает обе cookie.
+		// HTTPS logout with both cookies ends both sessions and clears both cookies.
 		both := "__Host-dlehost_gate=" + secure.Value + "; dlehost_gate=" + plain.Value
 		page := c.do(shop, http.MethodGet, "/__dlehost/logout", nil, map[string]string{"Cookie": both})
 		start := strings.Index(page.body, `name="token" value="`)
@@ -326,7 +326,7 @@ func TestGateDocker(t *testing.T) {
 		if got := get(shop, "__Host-dlehost_gate="+secure.Value, "https"); got.code != http.StatusFound {
 			t.Fatalf("secure session survived logout: %d", got.code)
 		}
-		// Выход по HTTP без сессии просто стирает cookie, без ошибки.
+		// HTTP logout without a session just clears the cookie, without an error.
 		if r := c.do("shop.localhost", http.MethodPost, "/__dlehost/logout", url.Values{}, map[string]string{"Cookie": "dlehost_gate=" + plain.Value}); r.code != http.StatusSeeOther {
 			t.Fatalf("logout without session: %d", r.code)
 		}
@@ -347,13 +347,13 @@ func TestGateDocker(t *testing.T) {
 
 	t.Run("session TTL", func(t *testing.T) {
 		c.t = t
-		// По умолчанию без серверного истечения; cookie — на 400 дней (предел браузеров).
+		// No server-side expiry by default; the cookie lasts 400 days (the browser limit).
 		forever := login(t, shop, "shop-secret", true)
 		if !strings.HasPrefix(forever.Value, "99991231235959-") || forever.MaxAge < 399*24*3600 || forever.MaxAge > 400*24*3600 {
 			t.Fatalf("unlimited session: %q max-age %d", forever.Value, forever.MaxAge)
 		}
-		// Время моделируется сроком в файле сессии: прошедший срок не принимается,
-		// срок «без истечения» — принимается.
+		// Time is modelled by the expiry in the session file: a past expiry is rejected,
+		// a non-expiring one is accepted.
 		expired, unlimited := sessionValue("20000101000000"), sessionValue("99991231235959")
 		writeSession(t, "shop", expired)
 		writeSession(t, "shop", unlimited)
@@ -363,7 +363,7 @@ func TestGateDocker(t *testing.T) {
 		if r := get(shop, "__Host-dlehost_gate="+unlimited, "https"); r.code != http.StatusOK {
 			t.Fatalf("unlimited session: %d", r.code)
 		}
-		// Короткий срок: прежние сессии завершаются, новая живёт час и в cookie, и на сервере.
+		// Short lifetime: old sessions end, a new one lives an hour in the cookie and on the server.
 		hour := ProtectSettings{SessionTTL: time.Hour}
 		if err := ApplyProtect(s, hour, ProtectSettings{}, func() error { return nil }, logf); err != nil {
 			t.Fatal(err)
@@ -385,18 +385,18 @@ func TestGateDocker(t *testing.T) {
 		if r := get(shop, "__Host-dlehost_gate="+cookie.Value, "https"); r.code != http.StatusOK {
 			t.Fatalf("finite session: %d", r.code)
 		}
-		// Тот же идентификатор с подменённым сроком не принимается.
+		// The same identifier with a forged expiry is rejected.
 		if r := get(shop, "__Host-dlehost_gate=99991231235959"+cookie.Value[14:], "https"); r.code != http.StatusFound {
 			t.Fatalf("extended expiry accepted: %d", r.code)
 		}
-		// reset завершает и действующие сессии.
+		// reset also ends valid sessions.
 		if err := ResetSessions(s, "shop", logf); err != nil {
 			t.Fatal(err)
 		}
 		if r := get(shop, "__Host-dlehost_gate="+cookie.Value, "https"); r.code != http.StatusFound {
 			t.Fatalf("session survived reset: %d", r.code)
 		}
-		login(t, shop, "shop-secret", true) // каталог сессий после reset рабочий
+		login(t, shop, "shop-secret", true) // the session directory works after reset
 		if err := ApplyProtect(s, ProtectSettings{}, hour, func() error { return nil }, logf); err != nil {
 			t.Fatal(err)
 		}
@@ -409,7 +409,7 @@ func TestGateDocker(t *testing.T) {
 		}
 		c.expectGate(legacy, "/style.css")
 		c.expectOK(open, "/style.css", "css:ok")
-		// DLE 11.0 с PHP 7.4: тот же глобальный bcrypt; HTTP-cookie без __Host- и Secure.
+		// DLE 11.0 with PHP 7.4: the same global bcrypt; HTTP cookie without __Host- and Secure.
 		form := c.do(legacy, http.MethodGet, "/__dlehost/login", nil, nil)
 		csrf := form.cookie("dlehost_gate_csrf")
 		if csrf == nil || csrf.Secure {
@@ -422,10 +422,10 @@ func TestGateDocker(t *testing.T) {
 			t.Fatalf("legacy login: %d %+v", r.code, r.cookies)
 		}
 		c.expectOKCookie(legacy, "/style.css", "dlehost_gate="+cookie.Value, "css:ok")
-		// Сессия одного хоста не открывает другой.
+		// A session of one host does not open another.
 		c.expectGateCookie(shop, "/style.css", "__Host-dlehost_gate="+cookie.Value)
 
-		// Изменения учётки DLE не влияют на protect.
+		// DLE account changes do not affect protect.
 		if err := s.SQL("UPDATE dle_legacy.dle_users SET password = MD5(MD5('changed-in-dle')) WHERE name = 'owner';"); err != nil {
 			t.Fatal(err)
 		}
@@ -439,7 +439,7 @@ func TestGateDocker(t *testing.T) {
 		if code := postPassword("global-secret"); code != http.StatusSeeOther {
 			t.Fatalf("global password: %d", code)
 		}
-		// Смена глобального пароля отзывает сессии наследующих хостов.
+		// Changing the global password revokes the sessions of inheriting hosts.
 		if err := SetPassword(s, "", []byte("new-global"), false, ProtectSettings{Global: true}, logf); err != nil {
 			t.Fatal(err)
 		}
@@ -450,7 +450,7 @@ func TestGateDocker(t *testing.T) {
 		if code := postPassword("new-global"); code != http.StatusSeeOther {
 			t.Fatalf("new global password: %d", code)
 		}
-		// Перебор ограничен: после 20 неудач за 15 минут — 429 и для верного пароля.
+		// Brute force is limited: after 20 failures in 15 minutes, 429 even for the right password.
 		for i := 0; i < 20; i++ {
 			postPassword("wrong")
 		}
@@ -518,7 +518,7 @@ func TestGateDocker(t *testing.T) {
 			t.Fatalf("db down: %d %+v", r.code, r.cookies)
 		}
 		c.expectOKCookie(open, "/style.css", "dlehost_gate="+r.cookie("dlehost_gate").Value, "css:ok")
-		// rm при недоступной базе завершается ошибкой, а хост остаётся закрытым.
+		// remove with an unavailable database fails, and the host stays closed.
 		if err := Remove(s, "open", logf); err == nil {
 			t.Fatal("remove with database down succeeded")
 		}
@@ -571,7 +571,7 @@ func (c *gateClient) do(host, method, path string, form url.Values, headers map[
 	if err != nil {
 		c.t.Fatal(err)
 	}
-	request.URL.Opaque = path // путь передаётся без нормализации клиентом
+	request.URL.Opaque = path // the path is sent without client normalization
 	request.Host = host
 	if form != nil {
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -581,7 +581,7 @@ func (c *gateClient) do(host, method, path string, form url.Values, headers map[
 	}
 	for k, v := range headers {
 		if v == "" {
-			request.Header.Del(k) // пустое значение — без заголовка
+			request.Header.Del(k) // an empty value means no header
 			continue
 		}
 		request.Header.Set(k, v)
@@ -650,7 +650,7 @@ func writeTestDist(t *testing.T, dir, version string) {
 		"uploads/.htaccess":          "<If \"true\">\n    Require all granted\n</If>\nSatisfy Any\n",
 		"uploads/x.txt":              "upload:ok",
 		"__dlehost/x.txt":            "shadow:ok",
-		// Всё, чем .htaccess мог бы открыть доступ; правило vhost срабатывает раньше.
+		// Everything .htaccess could use to open access; the vhost rule runs first.
 		"bypass/.htaccess": "RewriteEngine Off\nOrder allow,deny\nAllow from all\nSatisfy Any\n<If \"true\">\n    Require all granted\n</If>\n",
 		"bypass/x.txt":     "bypass:ok",
 	} {

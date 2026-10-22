@@ -1,4 +1,4 @@
-// Package host — хосты DLE в стеке: создание, удаление, список, порт.
+// Package host manages DLE hosts in the stack: create, remove, list, port.
 package host
 
 import (
@@ -23,9 +23,9 @@ import (
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/stack"
 )
 
-// Host — запись реестра хостов (data/hosts.json в каталоге стека).
+// Host is a host registry entry (data/hosts.json in the stack directory).
 type Host struct {
-	gateKey string // отпечаток действующего хеша, только для генерации vhost
+	gateKey string // fingerprint of the effective hash, only for vhost generation
 
 	Name           string    `json:"name"`
 	DomainName     string    `json:"domain,omitempty"`
@@ -34,7 +34,7 @@ type Host struct {
 	PHP            string    `json:"php"`
 	Database       string    `json:"database"`
 	CreatedAt      time.Time `json:"created_at"`
-	// Protect — режим формы входа: "" (default, по глобальной настройке), on, off.
+	// Protect is the login form mode: "" (default, follows the global setting), on, off.
 	Protect string `json:"protect,omitempty"`
 }
 
@@ -48,7 +48,7 @@ func (h Host) Domain() string {
 	return h.Name + ".localhost"
 }
 
-// URL использует сохранённый origin; старые записи сохраняют локальную адресацию.
+// URL uses the stored origin; old entries keep local addressing.
 func (h Host) URL(s *stack.Stack) string {
 	if h.ExternalOrigin != "" {
 		return h.ExternalOrigin + "/"
@@ -60,10 +60,10 @@ var hostNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,40}[a-z0-9])?$`)
 
 func validateHostName(name string) error {
 	if !hostNameRe.MatchString(name) {
-		return fmt.Errorf("некорректное имя %q: латиница в нижнем регистре, цифры и дефис, до 42 символов", name)
+		return fmt.Errorf("invalid name %q: lower-case latin letters, digits and hyphens, up to 42 characters", name)
 	}
 	if name == "localhost" || name == "any" || strings.HasPrefix(name, "php") && isDigits(name[3:]) {
-		return fmt.Errorf("имя %q зарезервировано автохостами apache", name)
+		return fmt.Errorf("name %q is reserved by the apache auto hosts", name)
 	}
 	return nil
 }
@@ -94,9 +94,9 @@ func loadRegistry(s *stack.Stack) (map[string]Host, error) {
 		return nil, fmt.Errorf("%s: %w", s.RegistryPath(), err)
 	}
 	for _, h := range list {
-		// Неизвестный режим нельзя молча считать default: защита могла бы выключиться.
+		// An unknown mode must not silently become default: protection could turn off.
 		if _, err := ParseProtect(h.Protect); err != nil || h.Protect == ProtectDefault {
-			return nil, fmt.Errorf("%s: хост %s: недопустимый protect %q (on, off или без поля)", s.RegistryPath(), h.Name, h.Protect)
+			return nil, fmt.Errorf("%s: host %s: invalid protect %q (on, off or no field)", s.RegistryPath(), h.Name, h.Protect)
 		}
 		hosts[h.Name] = h
 	}
@@ -127,13 +127,13 @@ func sortHosts(list []Host) {
 	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
 }
 
-// Row — строка списка: управляемый хост из реестра или «чужой» каталог в www/.
+// Row is a list row: a managed host from the registry or a foreign directory in www/.
 type Row struct {
 	Host
 	Managed bool
 }
 
-// List — хосты из реестра и остальные каталоги в www/.
+// List returns the registry hosts and the other directories in www/.
 func List(s *stack.Stack) ([]Row, error) {
 	hosts, err := loadRegistry(s)
 	if err != nil {
@@ -161,15 +161,15 @@ func List(s *stack.Stack) ([]Row, error) {
 	return rows, nil
 }
 
-// Path — каталог файлов хоста <name> на машине или, с container, внутри
-// контейнеров. Подходит и для каталогов www/, созданных не через dlehost.
+// Path returns the files directory of host <name> on the machine or, with container,
+// inside the containers. It also works for www/ directories not created by hosts add.
 func Path(s *stack.Stack, name string, container bool) (string, error) {
 	if !hostNameRe.MatchString(name) {
-		return "", fmt.Errorf("некорректное имя %q", name)
+		return "", fmt.Errorf("invalid name %q", name)
 	}
 	dir := s.HostDir(name)
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-		return "", fmt.Errorf("хост %s не найден: нет каталога %s", name, dir)
+		return "", fmt.Errorf("host %s not found: no directory %s", name, dir)
 	}
 	if container {
 		return stack.ContainerWWWDir + "/" + name, nil
@@ -181,15 +181,15 @@ func vhostPath(s *stack.Stack, name string) string {
 	return filepath.Join(s.SitesDir(), "60-host-"+name+".conf")
 }
 
-// Явный vhost с фиксированной версией PHP. Файлы 60-* подключаются раньше
-// 90-auto.conf, поэтому домен обслуживается выбранной версией. protected
-// закрывает хост формой входа, включая его адреса автохостов; ttl — срок
-// сессии формы (0 — без серверного истечения).
+// An explicit vhost with a fixed PHP version. 60-* files are included before
+// 90-auto.conf, so the domain is served by the chosen version. protected
+// puts the login form in front of the host, including its auto host addresses;
+// ttl is the form session lifetime (0 means no server-side expiry).
 func vhostConfig(h Host, protected bool, ttl time.Duration) string {
 	ver := strings.ReplaceAll(h.PHP, ".", "")
 	forwarded := ""
 	if strings.HasPrefix(h.ExternalOrigin, "https://") {
-		forwarded = `    # Только за доверенным TLS-terminating proxy; backend не должен быть публичным.
+		forwarded = `    # Only behind a trusted TLS-terminating proxy; the backend must not be public.
     ProxyFCGISetEnvIf "req('X-Forwarded-Proto') == 'https'" HTTPS "on"
     ProxyFCGISetEnvIf "req('X-Forwarded-Proto') == 'https'" REQUEST_SCHEME "https"
 `
@@ -198,7 +198,7 @@ func vhostConfig(h Host, protected bool, ttl time.Duration) string {
 	if protected {
 		aliases, gate = gateAliases(h), gateConfig(h, ttl)
 	}
-	return fmt.Sprintf(`# Создано dlehost — не редактируйте вручную (DLE %s, PHP %s)
+	return fmt.Sprintf(`# Created by dleplugin hosts; do not edit by hand (DLE %s, PHP %s)
 <VirtualHost *:80>
     ServerName %s
 %s    DocumentRoot %s/%s
@@ -209,28 +209,28 @@ func vhostConfig(h Host, protected bool, ttl time.Duration) string {
 `, h.DLE, h.PHP, h.Domain(), aliases, stack.ContainerWWWDir, h.Name, ver, forwarded, gate, h.Name, h.Name)
 }
 
-// AddOptions — параметры нового хоста.
+// AddOptions are the parameters of a new host.
 type AddOptions struct {
 	Context     context.Context
 	Name        string
 	DLE         string
-	DistArchive string // прямой путь к ZIP-архиву дистрибутива DLE
+	DistArchive string // direct path to a DLE distribution ZIP
 	PHP         string
-	DefaultPHP  string   // предпочтение конфига; используется только при совместимости с DLE
-	PHPVersions []string // допустимые версии PHP
+	DefaultPHP  string   // config preference; used only when compatible with DLE
+	PHPVersions []string // allowed PHP versions
 	DistsDir    string
 	Admin       Credentials
-	Protect     string          // default, on или off
-	Settings    ProtectSettings // глобальные настройки формы входа
+	Protect     string          // default, on or off
+	Settings    ProtectSettings // global login form settings
 }
 
-// AddResult — созданный хост и его адрес.
+// AddResult is the created host and its address.
 type AddResult struct {
 	Host Host
 	URL  string
 }
 
-// Add создаёт хост из дистрибутива; при ошибке всё созданное откатывается.
+// Add creates a host from a distribution; everything created is rolled back on error.
 func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) {
 	name, dleVersion, phpVersion := opts.Name, opts.DLE, opts.PHP
 	if err := opts.Admin.Validate(); err != nil {
@@ -255,11 +255,11 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 		return nil, err
 	}
 	if _, ok := hosts[name]; ok {
-		return nil, fmt.Errorf("хост %s уже существует", name)
+		return nil, fmt.Errorf("host %s already exists", name)
 	}
 	hostDir := s.HostDir(name)
 	if _, err := os.Stat(hostDir); err == nil {
-		return nil, fmt.Errorf("каталог %s уже существует", hostDir)
+		return nil, fmt.Errorf("directory %s already exists", hostDir)
 	}
 
 	var archivePath string
@@ -278,25 +278,25 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 
 	archive, err := zip.OpenReader(archivePath)
 	if err != nil {
-		return nil, fmt.Errorf("дистрибутив DLE %s: %w (см. dlehost versions)", dleVersion, err)
+		return nil, fmt.Errorf("DLE distribution %s: %w (see dleplugin hosts versions)", dleVersion, err)
 	}
 	defer archive.Close()
 
 	distInfo, err := dist.Inspect(&archive.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("дистрибутив %s: %w", filepath.Base(archivePath), err)
+		return nil, fmt.Errorf("distribution %s: %w", filepath.Base(archivePath), err)
 	}
 	if dleVersion != "" && distInfo.Version != dleVersion {
-		return nil, fmt.Errorf("в архиве %s обнаружена версия DLE %s, но запрошена %s", filepath.Base(archivePath), distInfo.Version, dleVersion)
+		return nil, fmt.Errorf("archive %s contains DLE %s, but %s was requested", filepath.Base(archivePath), distInfo.Version, dleVersion)
 	}
 	dleVersion = distInfo.Version
 
 	phpVersion = selectPHP(dleVersion, phpVersion, opts.DefaultPHP)
 	if !slices.Contains(opts.PHPVersions, phpVersion) {
-		return nil, fmt.Errorf("версия PHP %s недоступна, допустимые: %s", phpVersion, strings.Join(opts.PHPVersions, ", "))
+		return nil, fmt.Errorf("PHP version %s is not available, allowed: %s", phpVersion, strings.Join(opts.PHPVersions, ", "))
 	}
 	if dist.VersionLess(phpVersion, minimumInstallerPHP(dleVersion)) {
-		return nil, fmt.Errorf("чистая установка DLE %s требует PHP >= %s", dleVersion, minimumInstallerPHP(dleVersion))
+		return nil, fmt.Errorf("a clean install of DLE %s requires PHP >= %s", dleVersion, minimumInstallerPHP(dleVersion))
 	}
 
 	h := Host{
@@ -327,9 +327,9 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 	}
 
 	if protected {
-		log("каталог сессий формы входа")
+		log("login form session directory")
 		rollback = append(rollback, func() { os.RemoveAll(s.GateDir(name)) })
-		// Сессии удалённого ранее хоста с тем же именем не должны подойти новому.
+		// Sessions of a previously removed host with the same name must not work for the new one.
 		if err := os.RemoveAll(s.GateDir(name)); err != nil {
 			return fail(err)
 		}
@@ -341,9 +341,9 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 		}
 	}
 
-	// Файлы готовятся вне www/ и публикуются переименованием только после
-	// vhost: иначе до его появления каталог отдавал бы автохост
-	// <имя>.localhost без формы входа.
+	// Files are prepared outside www/ and published by renaming only after the
+	// vhost exists: otherwise the directory would be served by the
+	// <name>.localhost auto host without the login form.
 	if err := os.MkdirAll(s.StagingDir(), 0o700); err != nil {
 		return fail(err)
 	}
@@ -352,12 +352,12 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 		return fail(err)
 	}
 	rollback = append(rollback, func() { os.RemoveAll(staging) })
-	log("распаковка DLE " + dleVersion)
+	log("unpacking DLE " + dleVersion)
 	if err := dist.ExtractPrefix(archive, staging, distInfo.Prefix); err != nil {
 		return fail(err)
 	}
 
-	log("создание базы " + h.Database)
+	log("creating database " + h.Database)
 	if err := s.SQL(createDatabaseSQL(h.Database)); err != nil {
 		return fail(err)
 	}
@@ -368,7 +368,7 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 	rollback = append(rollback, func() { s.SQL(dropUserSQL(h.Database)) })
 
 	url := h.URL(s)
-	log("стандартный установщик DLE " + dleVersion + " через HTTP")
+	log("running the standard DLE " + dleVersion + " installer over HTTP")
 	if err := prepareInstallerFiles(s, staging); err != nil {
 		return fail(err)
 	}
@@ -394,13 +394,13 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 	log("vhost apache, PHP " + phpVersion)
 	vhost := vhostPath(s, name)
 	if protected {
-		log("форма входа: включена")
+		log("login form: on")
 	}
 	if err := os.WriteFile(vhost, []byte(vhostConfig(h, protected, opts.Settings.SessionTTL)), 0o644); err != nil {
 		return fail(err)
 	}
 	rollback = append(rollback, func() {
-		// Пока опубликованные файлы не удалены, vhost их закрывает.
+		// The vhost protects the published files until they are removed.
 		if _, err := os.Stat(hostDir); err == nil {
 			return
 		}
@@ -411,11 +411,11 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 		return fail(err)
 	}
 
-	log("публикация файлов в " + hostDir)
+	log("publishing files to " + hostDir)
 	if err := os.Rename(staging, hostDir); err != nil {
 		return fail(err)
 	}
-	// Откат идёт в обратном порядке: файлы удаляются раньше vhost.
+	// Rollback runs in reverse order: files are removed before the vhost.
 	rollback = append(rollback, func() { os.RemoveAll(hostDir) })
 
 	hosts[name] = h
@@ -425,11 +425,11 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 	return &AddResult{Host: h, URL: url}, nil
 }
 
-// Remove удаляет хост, созданный через dlehost: базу, файлы и vhost.
-// vhost удаляется последним: пока файлы хоста есть, его vhost (и форма
-// входа, если включена) обслуживает и адреса автохостов, поэтому при
-// ошибке удаления базы или файлов хост не становится открытым. Повторный
-// rm продолжает с места ошибки.
+// Remove removes a host created by hosts add: database, files and vhost.
+// The vhost goes last: while the host files exist, its vhost (and the login
+// form, when enabled) also serves the auto host addresses, so a failure to
+// remove the database or files does not leave the host open. Running
+// remove again continues from the failed step.
 func Remove(s *stack.Stack, name string, log func(string)) error {
 	hosts, err := loadRegistry(s)
 	if err != nil {
@@ -437,20 +437,20 @@ func Remove(s *stack.Stack, name string, log func(string)) error {
 	}
 	h, ok := hosts[name]
 	if !ok {
-		return fmt.Errorf("хост %s не найден среди созданных через dlehost", name)
+		return fmt.Errorf("host %s is not among the hosts created by hosts add", name)
 	}
 
-	log("удаление базы " + h.Database)
+	log("dropping database " + h.Database)
 	if err := s.SQL(dropDatabaseSQL(h.Database) + dropUserSQL(h.Database)); err != nil {
 		return err
 	}
 
-	log("удаление файлов")
+	log("removing files")
 	if err := os.RemoveAll(s.HostDir(name)); err != nil {
 		return err
 	}
 
-	log("удаление vhost")
+	log("removing vhost")
 	if err := os.Remove(vhostPath(s, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -459,7 +459,7 @@ func Remove(s *stack.Stack, name string, log func(string)) error {
 	}
 
 	if err := clearSessions(s, name, false); err != nil {
-		log("не удалось удалить сессии формы входа: " + err.Error())
+		log("could not remove the login form sessions: " + err.Error())
 	}
 	passwords, err := loadPasswords(s)
 	if err != nil {
@@ -475,8 +475,8 @@ func Remove(s *stack.Stack, name string, log func(string)) error {
 	return saveRegistry(s, hosts)
 }
 
-// Имя базы совпадает с именем пользователя; оба состоят из [a-z0-9_],
-// поэтому экранирование не требуется.
+// The database name equals the user name; both consist of [a-z0-9_],
+// so no escaping is needed.
 func createDatabaseSQL(db string) string {
 	return fmt.Sprintf("CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;", db)
 }
@@ -496,7 +496,7 @@ func dropUserSQL(user string) string {
 	return fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%';", user)
 }
 
-// Хост БД, видимый из контейнеров PHP, — имя сервиса MariaDB в docker-compose.
+// The database host seen from the PHP containers: the MariaDB service name in docker-compose.
 const dbServiceHost = "db"
 
 var homeURLRe = regexp.MustCompile(`('http_home_url'\s*=>\s*)(['"]).*?(['"])`)
@@ -523,11 +523,11 @@ func randomHex(n int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// SetHTTPPort переключает порт apache для всего стека и обновляет
-// http_home_url у хостов dlehost без внешнего origin.
+// SetHTTPPort switches the Apache port of the whole stack and updates
+// http_home_url of the hosts without an external origin.
 func SetHTTPPort(s *stack.Stack, port int, log func(string)) error {
 	if port < 1 || port > 65535 {
-		return fmt.Errorf("некорректный порт %d", port)
+		return fmt.Errorf("invalid port %d", port)
 	}
 	hosts, err := loadRegistry(s)
 	if err != nil {
@@ -535,17 +535,17 @@ func SetHTTPPort(s *stack.Stack, port int, log func(string)) error {
 	}
 	prev := s.HTTPPort()
 
-	log("HTTP_PORT=" + strconv.Itoa(port) + " в .env")
+	log("HTTP_PORT=" + strconv.Itoa(port) + " in .env")
 	if err := s.SetDotEnv("HTTP_PORT", strconv.Itoa(port)); err != nil {
 		return err
 	}
-	log("пересоздание apache")
+	log("recreating apache")
 	if err := s.Compose(nil, "up", "-d", "apache"); err != nil {
 		s.SetDotEnv("HTTP_PORT", prev)
 		if rerr := s.Compose(nil, "up", "-d", "apache"); rerr != nil {
-			return fmt.Errorf("%w; вернуть порт %s тоже не удалось: %v", err, prev, rerr)
+			return fmt.Errorf("%w; restoring port %s failed too: %v", err, prev, rerr)
 		}
-		return fmt.Errorf("%w (порт возвращён на %s)", err, prev)
+		return fmt.Errorf("%w (port restored to %s)", err, prev)
 	}
 
 	for _, h := range hosts {
@@ -564,8 +564,8 @@ func SetHTTPPort(s *stack.Stack, port int, log func(string)) error {
 	return nil
 }
 
-// clearPageCache удаляет кэш страниц DLE (engine/cache/*.tmp) — в нём
-// сохранены абсолютные ссылки со старым адресом.
+// clearPageCache removes the DLE page cache (engine/cache/*.tmp): it holds
+// absolute links with the old address.
 func clearPageCache(hostDir string) error {
 	files, err := filepath.Glob(filepath.Join(hostDir, "engine", "cache", "*.tmp"))
 	if err != nil {

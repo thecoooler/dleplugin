@@ -1,8 +1,6 @@
-package main
+package hosts
 
 import (
-	config "github.com/thecoooler/dleplugin/internal/modules/hosts/internal/hostconfig"
-	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/host"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,7 +8,36 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/host"
+	config "github.com/thecoooler/dleplugin/internal/modules/hosts/internal/hostconfig"
+	"github.com/thecoooler/dleplugin/internal/modules/moduletest"
 )
+
+// run executes dleplugin hosts with args and stdin; it returns the exit code
+// and the error output.
+func run(t *testing.T, stdin string, args ...string) (int, string) {
+	t.Helper()
+	e := moduletest.NewEnv(t, stdin, Module())
+	code := e.Run(append([]string{"hosts"}, args...)...)
+	return code, e.ErrB.String()
+}
+
+func TestHelp(t *testing.T) {
+	for _, sub := range []string{"", "up", "down", "compose", "list", "add", "remove", "protect", "path", "port", "versions", "config", "config set"} {
+		args := append(strings.Fields(sub), "--help")
+		if sub == "compose" {
+			continue // flags go to docker compose
+		}
+		e := moduletest.NewEnv(t, "", Module())
+		if code := e.Run(append([]string{"hosts"}, args...)...); code != 0 {
+			t.Errorf("hosts %s --help: exit %d: %s", sub, code, e.ErrB.String())
+		}
+		if !strings.Contains(e.Out.String(), "dleplugin hosts") {
+			t.Errorf("hosts %s --help lacks usage:\n%s", sub, e.Out.String())
+		}
+	}
+}
 
 func TestCredentialPrecedence(t *testing.T) {
 	cmd := &cobra.Command{}
@@ -59,9 +86,7 @@ func TestProtectArgumentsValidatedBeforeStack(t *testing.T) {
 	t.Setenv("DLEHOST_DIR", dir)
 	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
 	for _, args := range [][]string{{"protect", "shop"}, {"protect", "yes"}, {"protect", "shop", "maybe"}, {"add", "shop", "--protect", "yes"}, {"config", "set", "protect_session_ttl", "5x"}} {
-		cmd := rootCmd()
-		cmd.SetArgs(args)
-		if err := cmd.Execute(); err == nil {
+		if code, _ := run(t, "", args...); code == 0 {
 			t.Errorf("%v accepted", args)
 		}
 	}
@@ -88,7 +113,7 @@ func TestReadProtectPassword(t *testing.T) {
 		valid    bool
 	}{
 		{"secret\n", "secret", true}, {"secret\r\n", "secret", true}, {" secret ", " secret ", true},
-		{"пароль\n", "пароль", true}, {strings.Repeat("a", 72) + "\r\n", strings.Repeat("a", 72), true},
+		{"pässwörd\n", "pässwörd", true}, {strings.Repeat("a", 72) + "\r\n", strings.Repeat("a", 72), true},
 		{"", "", false}, {"\n", "", false}, {"a\nb\n", "", false}, {"a\x00b", "", false}, {strings.Repeat("a", 73), "", false},
 	} {
 		got, err := readProtectPassword(strings.NewReader(tc.in), io.Discard)
@@ -102,23 +127,18 @@ func TestProtectPasswordCLI(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DLEHOST_DIR", dir)
 	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
-	run := func(args ...string) error {
-		c := rootCmd()
-		c.SetArgs(args)
-		c.SetIn(strings.NewReader("cli-secret\n"))
-		return c.Execute()
+	cli := func(args ...string) (int, string) { return run(t, "cli-secret\n", args...) }
+	if code, out := cli("protect", "on"); code == 0 || !strings.Contains(out, "no global password") {
+		t.Fatalf("enable without password: %d %s", code, out)
 	}
-	if err := run("protect", "on"); err == nil || !strings.Contains(err.Error(), "не задан глобальный пароль") {
-		t.Fatalf("enable without password: %v", err)
-	}
-	if err := run("protect", "password", "--default"); err == nil {
+	if code, _ := cli("protect", "password", "--default"); code == 0 {
 		t.Fatal("accepted global --default")
 	}
-	if err := run("protect", "password", "cli-secret"); err == nil {
+	if code, _ := cli("protect", "password", "cli-secret"); code == 0 {
 		t.Fatal("accepted positional password")
 	}
-	if err := run("protect", "password"); err != nil {
-		t.Fatal(err)
+	if code, out := cli("protect", "password"); code != 0 {
+		t.Fatal(out)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "data", "protect", "passwords.json"))
 	if err != nil {
@@ -127,14 +147,14 @@ func TestProtectPasswordCLI(t *testing.T) {
 	if strings.Contains(string(data), "cli-secret") || !strings.Contains(string(data), "$2a$10$") {
 		t.Fatal("CLI did not store only bcrypt hash")
 	}
-	if err := run("protect", "on"); err != nil {
-		t.Fatal(err)
+	if code, out := cli("protect", "on"); code != 0 {
+		t.Fatal(out)
 	}
 	cfg, err := config.Load()
 	if err != nil || !cfg.Protect {
 		t.Fatal("global protect not persisted")
 	}
-	if err := run("protect"); err != nil {
-		t.Fatal(err)
+	if code, out := cli("protect"); code != 0 {
+		t.Fatal(out)
 	}
 }

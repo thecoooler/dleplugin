@@ -1,25 +1,26 @@
 <?php
-// Форма входа dlehost перед сайтом (dlehost protect). Служебный файл стека:
-// перезаписывается при обновлении dlehost, не редактируйте его вручную.
+// Login form in front of a site (dleplugin hosts protect). A stack service file:
+// overwritten when dleplugin is updated, do not edit it by hand.
 //
-// Apache пропускает к сайту только запросы с действующей cookie сессии:
-// файл <GATE_DIR>/<сайт>/sha1(<cookie>)-v2-sha256(<bcrypt-хеш>) существует, а срок в
-// значении не истёк (см. vhost 60-host-<сайт>.conf). Этот скрипт проверяет
-// отдельный пароль по bcrypt-хешу protect, создаёт и удаляет файлы сессий.
+// Apache lets through to the site only requests with a valid session cookie:
+// the file <GATE_DIR>/<site>/sha1(<cookie>)-v2-sha256(<bcrypt hash>) exists and the
+// expiry in the value has not passed (see vhost 60-host-<site>.conf). This script
+// checks the separate password against the protect bcrypt hash and creates and
+// removes the session files.
 //
-// Имя cookie зависит от схемы так же, как в vhost: на HTTPS (HTTPS=on от
-// ProxyFCGISetEnvIf публичных HTTPS-хостов) — только Secure __Host-dlehost_gate,
-// иначе — dlehost_gate. Срок сессии — DLEHOST_GATE_TTL из vhost (секунды,
-// 0 — без серверного истечения).
+// The cookie name depends on the scheme as in the vhost: over HTTPS (HTTPS=on from
+// ProxyFCGISetEnvIf of public HTTPS hosts) only the Secure __Host-dlehost_gate,
+// otherwise dlehost_gate. The session lifetime is DLEHOST_GATE_TTL from the vhost
+// (seconds, 0 means no server-side expiry).
 
 declare(strict_types=1);
 
 const GATE_DIR = '/var/lib/dlehost/gate';
 const PASSWORDS_FILE = '/opt/dlehost/protect/passwords.json';
-const NO_EXPIRY = '99991231235959'; // срок «без истечения» в формате %{TIME}
-const COOKIE_MAX_AGE = 400 * 24 * 3600; // браузеры не хранят cookie дольше ~400 дней
-const MAX_FAILURES = 20;   // неудачных попыток на сайт…
-const FAILURE_WINDOW = 900; // …за 15 минут
+const NO_EXPIRY = '99991231235959'; // "no expiry" in the %{TIME} format
+const COOKIE_MAX_AGE = 400 * 24 * 3600; // browsers keep cookies for ~400 days at most
+const MAX_FAILURES = 20;   // failed attempts per site…
+const FAILURE_WINDOW = 900; // …within 15 minutes
 const LOGIN_PATH = '/__dlehost/login';
 const LOGOUT_PATH = '/__dlehost/logout';
 
@@ -33,14 +34,14 @@ header('X-Robots-Tag: noindex, nofollow');
 $site = (string)($_SERVER['DLEHOST_GATE_SITE'] ?? '');
 $ttl = (string)($_SERVER['DLEHOST_GATE_TTL'] ?? '');
 if (!preg_match('/^[a-z0-9]([a-z0-9-]{0,40}[a-z0-9])?$/', $site) || !preg_match('/^[0-9]{1,12}$/', $ttl)) {
-    fail(500, 'Вход не настроен');
+    fail(500, 'Login is not configured');
 }
 $ttl = (int)$ttl;
 $secure = ($_SERVER['HTTPS'] ?? '') === 'on';
 $sessionCookie = $secure ? '__Host-dlehost_gate' : 'dlehost_gate';
 $csrfCookie = $secure ? '__Host-dlehost_gate_csrf' : 'dlehost_gate_csrf';
 $dir = GATE_DIR . '/' . $site;
-// Единственный снимок хеша на запрос: смена пароля меняет пространство сессий.
+// One hash snapshot per request: a password change changes the session namespace.
 $config = json_decode((string)@file_get_contents(PASSWORDS_FILE), true);
 $hash = is_array($config) ? ($config['hosts'][$site] ?? $config['global'] ?? null) : null;
 if (!is_string($hash) || !preg_match('/^\$2[aby]\$10\$[.\/A-Za-z0-9]{53}$/', $hash)) {
@@ -56,7 +57,7 @@ if ($path === LOGOUT_PATH) {
 } elseif ($path === LOGIN_PATH) {
     login();
 } else {
-    // Сюда Apache направляет запросы к сайту без действующей сессии.
+    // Apache sends site requests without a valid session here.
     $code = $method === 'GET' || $method === 'HEAD' ? 302 : 303;
     redirect(LOGIN_PATH . '?return=' . rawurlencode(safeReturn($requestURI)), $code);
 }
@@ -72,16 +73,16 @@ function login(): void
         form($return, 200, '');
     }
     if (!sameOrigin() || !validCSRF()) {
-        form($return, 403, 'Форма устарела, попробуйте ещё раз');
+        form($return, 403, 'The form has expired, please try again');
     }
     $password = (string)($_POST['password'] ?? '');
 
     ensureDir($dir);
     $lock = fopen($dir . '/attempts', 'c+');
     if ($lock === false || !flock($lock, LOCK_EX)) {
-        fail(503, 'Вход временно недоступен');
+        fail(503, 'Login is temporarily unavailable');
     }
-    // Проверки сериализованы блокировкой: параллельные запросы не обходят лимит.
+    // Checks are serialized by the lock: parallel requests do not bypass the limit.
     $now = time();
     $failures = array_values(array_filter(
         array_map('intval', explode("\n", (string)stream_get_contents($lock))),
@@ -89,10 +90,10 @@ function login(): void
     ));
     if (count($failures) >= MAX_FAILURES) {
         header('Retry-After: ' . max(1, $failures[0] + FAILURE_WINDOW - $now));
-        form($return, 429, 'Слишком много попыток, повторите позже');
+        form($return, 429, 'Too many attempts, try again later');
     }
     $hash = $GLOBALS['hash'];
-    // Фиктивная проверка той же стоимости при отсутствии/повреждении хеша.
+    // A dummy check of the same cost when the hash is missing or broken.
     $verified = password_verify(substr($password, 0, 72), $hash ?? '$2a$10$pMVK93Fjc2/Dp9KllbU9Ju1StdQUNCkzO1nXCik70k9DYSVYoby72');
     if ($hash === null || $password === '' || strlen($password) > 72 || !$verified) {
         $failures[] = $now;
@@ -101,24 +102,24 @@ function login(): void
         fwrite($lock, implode("\n", $failures) . "\n");
         fflush($lock);
         usleep(300000);
-        form($return, 401, 'Неверный пароль');
+        form($return, 401, 'Wrong password');
     }
     flock($lock, LOCK_UN);
     fclose($lock);
 
-    // Новый идентификатор при каждом входе; прежняя сессия браузера удаляется.
+    // A new identifier on every login; the previous browser session is removed.
     deleteSession($GLOBALS['sessionCookie']);
     pruneSessions();
     $ttl = $GLOBALS['ttl'];
-    // Срок сервера и cookie совпадают; без истечения cookie живёт сколько
-    // позволит браузер (до ~400 дней), затем нужен повторный вход.
+    // The server and cookie expiries match; without expiry the cookie lives as
+    // long as the browser allows (up to ~400 days), then a new login is needed.
     $expiry = $ttl > 0 ? gmdate('YmdHis', $now + $ttl) : NO_EXPIRY;
     $cookieExpires = $now + ($ttl > 0 ? min($ttl, COOKIE_MAX_AGE) : COOKIE_MAX_AGE);
     $value = $expiry . '-' . rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
     $file = sessionFile($value);
-    // В файле только срок для очистки; ни логина, ни пароля, ни хеша.
+    // The file holds only the expiry for cleanup; no login, password or hash.
     if (file_put_contents($file, $expiry . "\n", LOCK_EX) === false) {
-        fail(503, 'Не удалось создать сессию');
+        fail(503, 'Could not create a session');
     }
     @chmod($file, 0600);
     setGateCookie($GLOBALS['sessionCookie'], $value, $cookieExpires, 'Lax');
@@ -130,12 +131,12 @@ function logout(): void
     global $method;
     $session = currentSession();
     if ($method === 'POST') {
-        // Выход — только из формы этого сайта: токен выводится из самой сессии.
+        // Logout only from this site's form: the token is derived from the session itself.
         if ($session !== null && (!sameOrigin() || !hash_equals(logoutToken($session), (string)($_POST['token'] ?? '')))) {
-            fail(403, 'Форма устарела, попробуйте ещё раз');
+            fail(403, 'The form has expired, please try again');
         }
-        // Завершаются сессии под обоими именами cookie, которые прислал браузер:
-        // не-Secure cookie (вход по HTTP) отправляется и по HTTPS.
+        // End the sessions under both cookie names the browser sent:
+        // a non-Secure cookie (HTTP login) is also sent over HTTPS.
         foreach (['dlehost_gate', '__Host-dlehost_gate'] as $name) {
             deleteSession($name);
             if (isset($_COOKIE[$name]) && ($GLOBALS['secure'] || $name === 'dlehost_gate')) {
@@ -145,11 +146,11 @@ function logout(): void
         redirect(LOGIN_PATH, 303);
     }
     if ($session === null) {
-        page(200, 'Вы не вошли', '<p><a href="' . LOGIN_PATH . '">Войти</a></p>');
+        page(200, 'You are not logged in', '<p><a href="' . LOGIN_PATH . '">Log in</a></p>');
     }
-    page(200, 'Выход', '<form method="post" action="' . LOGOUT_PATH . '">'
+    page(200, 'Log out', '<form method="post" action="' . LOGOUT_PATH . '">'
         . '<input type="hidden" name="token" value="' . h(logoutToken($session)) . '">'
-        . '<button type="submit">Выйти</button></form>');
+        . '<button type="submit">Log out</button></form>');
 }
 
 function currentSession(): ?string
@@ -177,7 +178,7 @@ function sessionFile(string $value): string
     return $GLOBALS['dir'] . '/' . sha1($value) . $GLOBALS['sessionSuffix'];
 }
 
-// Удаляет файлы истёкших сессий; срок — первая строка файла.
+// Removes expired session files; the expiry is the first line of the file.
 function pruneSessions(): void
 {
     $now = gmdate('YmdHis');
@@ -200,7 +201,7 @@ function validCSRF(): bool
     return strlen($cookie) === 43 && hash_equals($cookie, (string)($_POST['csrf'] ?? ''));
 }
 
-// Браузеры передают Origin в POST; чужой Origin или межсайтовый запрос отклоняются.
+// Browsers send Origin with POST; a foreign Origin or a cross-site request is rejected.
 function sameOrigin(): bool
 {
     if (($_SERVER['HTTP_SEC_FETCH_SITE'] ?? 'same-origin') === 'cross-site') {
@@ -222,11 +223,11 @@ function sameOrigin(): bool
 function ensureDir(string $dir): void
 {
     if (!is_dir($dir) && !@mkdir($dir, 0700) && !is_dir($dir)) {
-        fail(503, 'Вход временно недоступен');
+        fail(503, 'Login is temporarily unavailable');
     }
 }
 
-// Возврат только на локальный путь этого сайта.
+// Return only to a local path of this site.
 function safeReturn($value): string
 {
     if (!is_string($value) || $value === '' || strlen($value) > 4096 || $value[0] !== '/'
@@ -264,17 +265,17 @@ function form(string $return, int $code, string $error): void
         . '<form method="post" action="' . LOGIN_PATH . '">'
         . '<input type="hidden" name="csrf" value="' . h(csrfToken()) . '">'
         . '<input type="hidden" name="return" value="' . h($return) . '">'
-        . '<label>Пароль<input name="password" type="password" autocomplete="current-password" required autofocus></label>'
-        . '<button type="submit">Войти</button></form>'
-        . '<p class="hint">Пароль доступа к сайту.</p>';
-    page($code, 'Вход на сайт', $body);
+        . '<label>Password<input name="password" type="password" autocomplete="current-password" required autofocus></label>'
+        . '<button type="submit">Log in</button></form>'
+        . '<p class="hint">Site access password.</p>';
+    page($code, 'Site login', $body);
 }
 
 function page(int $code, string $title, string $body): void
 {
     http_response_code($code);
     header('Content-Type: text/html; charset=utf-8');
-    echo '<!doctype html><html lang="ru"><head><meta charset="utf-8">'
+    echo '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         . '<meta name="viewport" content="width=device-width, initial-scale=1">'
         . '<meta name="robots" content="noindex, nofollow"><title>' . h($title) . '</title><style>'
         . 'body{font:16px/1.4 system-ui,sans-serif;background:#f3f4f6;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center}'

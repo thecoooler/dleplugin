@@ -282,10 +282,10 @@ func TestExtract(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "evil.zip")
 		createTestZip(t, path, map[string]string{
-			"install.php":        "$config = array('version_id' => '21.0');",
-			"index.php":          "<?php",
-			"engine/init.php":    "<?php",
-			"../evil.txt":        "payload",
+			"install.php":     "$config = array('version_id' => '21.0');",
+			"index.php":       "<?php",
+			"engine/init.php": "<?php",
+			"../evil.txt":     "payload",
 		})
 		archive, err := zip.OpenReader(path)
 		if err != nil {

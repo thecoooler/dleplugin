@@ -1,4 +1,4 @@
-// Package dist — чистые дистрибутивы DLE.
+// Package dist handles clean DLE distributions.
 package dist
 
 import (
@@ -14,23 +14,23 @@ import (
 	"strings"
 )
 
-// ErrNoDir — не задан каталог дистрибутивов.
-var ErrNoDir = errors.New("не задан каталог дистрибутивов: dlehost config set dists_dir <путь>")
+// ErrNoDir reports that the distributions directory is not set.
+var ErrNoDir = errors.New("the distributions directory is not set: dleplugin hosts config set dists_dir PATH")
 
 var (
-	versionIDRe    = regexp.MustCompile(`['"]version_id['"]\s*=>\s*['"]([0-9]+\.[0-9]+)['"]`)
+	versionIDRe     = regexp.MustCompile(`['"]version_id['"]\s*=>\s*['"]([0-9]+\.[0-9]+)['"]`)
 	versionDefineRe = regexp.MustCompile(`define\s*\(\s*['"]VERSIONID['"]\s*,\s*['"]([0-9]+\.[0-9]+)['"]\s*\)`)
 )
 
-// Info содержит проверенные параметры чистого дистрибутива DLE.
+// Info holds the checked parameters of a clean DLE distribution.
 type Info struct {
 	Path    string
 	Version string
 	Prefix  string
 }
 
-// Inspect проверяет ZIP-архив на соответствие чистому дистрибутиву DLE
-// и определяет версию и префикс каталога сайта в архиве по расположению install.php.
+// Inspect checks that a ZIP archive is a clean DLE distribution and detects the
+// version and the site directory prefix in the archive from where install.php is.
 func Inspect(archive *zip.Reader) (*Info, error) {
 	prefix, installFile, err := findInstallScript(archive)
 	if err != nil {
@@ -38,21 +38,21 @@ func Inspect(archive *zip.Reader) (*Info, error) {
 	}
 	for _, f := range archive.File {
 		if f.Name == prefix+"engine/data/config.php" || f.Name == prefix+"engine/data/dbconfig.php" {
-			return nil, fmt.Errorf("архив не является чистым дистрибутивом: содержит %s (сайт уже установлен)", f.Name)
+			return nil, fmt.Errorf("the archive is not a clean distribution: it contains %s (the site is already installed)", f.Name)
 		}
 	}
 	if !hasFile(archive, prefix+"index.php") {
-		return nil, fmt.Errorf("архив не является полным дистрибутивом DLE: отсутствует %s", prefix+"index.php")
+		return nil, fmt.Errorf("the archive is not a complete DLE distribution: %s is missing", prefix+"index.php")
 	}
 	if !hasEngine(archive, prefix) {
-		return nil, fmt.Errorf("архив не является полным дистрибутивом DLE: отсутствует каталог %s", prefix+"engine/")
+		return nil, fmt.Errorf("the archive is not a complete DLE distribution: directory %s is missing", prefix+"engine/")
 	}
 	version, err := readVersion(installFile)
 	if err != nil {
 		return nil, err
 	}
 	if !CleanSupported(version) {
-		return nil, fmt.Errorf("неподдерживаемая версия DLE %q: установка доступна начиная с 11.0", version)
+		return nil, fmt.Errorf("unsupported DLE version %q: installation is available from 11.0", version)
 	}
 	return &Info{
 		Version: version,
@@ -60,7 +60,7 @@ func Inspect(archive *zip.Reader) (*Info, error) {
 	}, nil
 }
 
-// InspectFile открывает ZIP-архив по пути и проверяет его содержимое.
+// InspectFile opens the ZIP archive at path and checks its contents.
 func InspectFile(path string) (*Info, error) {
 	r, err := zip.OpenReader(path)
 	if err != nil {
@@ -75,7 +75,7 @@ func InspectFile(path string) (*Info, error) {
 	return info, nil
 }
 
-// DetectVersion определяет версию DLE по содержимому архива (из install.php).
+// DetectVersion detects the DLE version from the archive contents (from install.php).
 func DetectVersion(archive *zip.Reader) (string, error) {
 	info, err := Inspect(archive)
 	if err != nil {
@@ -92,9 +92,9 @@ func findInstallScript(archive *zip.Reader) (string, *zip.File, error) {
 		}
 	}
 	if len(candidates) == 0 {
-		return "", nil, errors.New("в архиве нет install.php")
+		return "", nil, errors.New("the archive has no install.php")
 	}
-	// Если кандидатов несколько, выбираем тот, рядом с которым расположен index.php
+	// With several candidates, pick the one next to index.php
 	matches := candidates
 	if len(candidates) > 1 {
 		var valid []*zip.File
@@ -109,7 +109,7 @@ func findInstallScript(archive *zip.Reader) (string, *zip.File, error) {
 		}
 	}
 	if len(matches) > 1 {
-		return "", nil, fmt.Errorf("в архиве несколько возможных каталогов с install.php (%d): распакуйте вложенный ZIP", len(matches))
+		return "", nil, fmt.Errorf("the archive has several possible directories with install.php (%d): unpack the nested ZIP", len(matches))
 	}
 	installFile := matches[0]
 	prefix := strings.TrimSuffix(installFile.Name, "install.php")
@@ -151,7 +151,7 @@ func readVersion(f *zip.File) (string, error) {
 	if m := versionDefineRe.FindSubmatch(data); m != nil {
 		return string(m[1]), nil
 	}
-	return "", fmt.Errorf("в %s не найдена версия DLE (поле version_id)", f.Name)
+	return "", fmt.Errorf("no DLE version found in %s (version_id field)", f.Name)
 }
 
 // CleanSupported accepts numeric DLE release versions starting with 11.0.
@@ -173,37 +173,37 @@ func CleanSupported(version string) bool {
 	return !VersionLess(version, "11.0")
 }
 
-// Resolve находит архив <версия>.zip в каталоге dir
-// и проверяет, что он является чистым дистрибутивом и содержит указанную версию DLE.
+// Resolve finds the archive <version>.zip in dir and checks that it is a
+// clean distribution of the given DLE version.
 func Resolve(dir, version string) (string, error) {
 	if dir == "" {
 		return "", ErrNoDir
 	}
 	if !CleanSupported(version) {
-		return "", fmt.Errorf("неподдерживаемая версия DLE %q: установка доступна начиная с 11.0", version)
+		return "", fmt.Errorf("unsupported DLE version %q: installation is available from 11.0", version)
 	}
 	path := filepath.Join(dir, version+".zip")
 	info, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf("нет дистрибутива DLE %s: файл %s.zip не найден в %s", version, version, dir)
+			return "", fmt.Errorf("no DLE %s distribution: %s.zip not found in %s", version, version, dir)
 		}
 		return "", err
 	}
 	if info.IsDir() {
-		return "", fmt.Errorf("нет дистрибутива DLE %s: %s является каталогом, ожидался ZIP-архив", version, path)
+		return "", fmt.Errorf("no DLE %s distribution: %s is a directory, expected a ZIP archive", version, path)
 	}
 	distInfo, err := InspectFile(path)
 	if err != nil {
-		return "", fmt.Errorf("архив %s: %w", filepath.Base(path), err)
+		return "", fmt.Errorf("archive %s: %w", filepath.Base(path), err)
 	}
 	if distInfo.Version != version {
-		return "", fmt.Errorf("в архиве %s обнаружена версия DLE %s, ожидалась %s", filepath.Base(path), distInfo.Version, version)
+		return "", fmt.Errorf("archive %s contains DLE %s, expected %s", filepath.Base(path), distInfo.Version, version)
 	}
 	return path, nil
 }
 
-// List — версии DLE из чистых дистрибутивов <версия>.zip в каталоге dir по возрастанию.
+// List returns the DLE versions of the clean <version>.zip distributions in dir, ascending.
 func List(dir string) ([]string, error) {
 	if dir == "" {
 		return nil, ErrNoDir
@@ -236,7 +236,7 @@ func List(dir string) ([]string, error) {
 	return versions, nil
 }
 
-// VersionLess сравнивает версии вида 19.0 и 11.2 по числовым частям.
+// VersionLess compares versions such as 19.0 and 11.2 by their numeric parts.
 func VersionLess(a, b string) bool {
 	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
 	for i := 0; i < len(pa) && i < len(pb); i++ {
@@ -255,7 +255,7 @@ func VersionLess(a, b string) bool {
 	return len(pa) < len(pb)
 }
 
-// Extract распаковывает чистый дистрибутив в dest.
+// Extract unpacks a clean distribution into dest.
 func Extract(archive *zip.ReadCloser, dest string) error {
 	info, err := Inspect(&archive.Reader)
 	if err != nil {
@@ -264,7 +264,7 @@ func Extract(archive *zip.ReadCloser, dest string) error {
 	return ExtractPrefix(archive, dest, info.Prefix)
 }
 
-// ExtractPrefix распаковывает файлы архива, начинающиеся с prefix, в dest со снятием префикса.
+// ExtractPrefix unpacks the archive files starting with prefix into dest, stripping the prefix.
 func ExtractPrefix(archive *zip.ReadCloser, dest, prefix string) error {
 	return extract(archive, dest, prefix)
 }
@@ -281,7 +281,7 @@ func extract(archive *zip.ReadCloser, dest, prefix string) error {
 		}
 		target := filepath.Join(dest, name)
 		if !strings.HasPrefix(target, root) {
-			return fmt.Errorf("недопустимый путь в архиве: %s", f.Name)
+			return fmt.Errorf("invalid path in the archive: %s", f.Name)
 		}
 		if f.FileInfo().IsDir() {
 			if err := os.MkdirAll(target, 0o755); err != nil {

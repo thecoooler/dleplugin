@@ -16,7 +16,7 @@ func TestProtectRequiresPassword(t *testing.T) {
 	registerTestHosts(t, s, Host{Name: "shop"})
 	before := readTestFile(t, vhostPath(s, "shop"))
 	commit := false
-	if err := ApplyProtect(s, ProtectSettings{Global: true}, ProtectSettings{}, func() error { commit = true; return nil }, func(string) {}); err == nil || !strings.Contains(err.Error(), "не задан пароль") {
+	if err := ApplyProtect(s, ProtectSettings{Global: true}, ProtectSettings{}, func() error { commit = true; return nil }, func(string) {}); err == nil || !strings.Contains(err.Error(), "has no password") {
 		t.Fatalf("global enable: %v", err)
 	}
 	if _, err := SetProtect(s, "shop", "on", ProtectSettings{}, func(string) {}); err == nil {
@@ -24,7 +24,7 @@ func TestProtectRequiresPassword(t *testing.T) {
 	}
 	for _, mode := range []string{"on", "default"} {
 		_, err := Add(s, AddOptions{Name: "new", Protect: mode, Settings: ProtectSettings{Global: true}, Admin: Credentials{"admin", "secret"}}, func(string) {})
-		if err == nil || !strings.Contains(err.Error(), "не задан пароль") {
+		if err == nil || !strings.Contains(err.Error(), "has no password") {
 			t.Fatalf("add %s: %v", mode, err)
 		}
 	}
@@ -95,7 +95,7 @@ func TestProtectPasswordLifecycle(t *testing.T) {
 	if p.Hosts["own"] != "" || p.effective("own") != p.Global {
 		t.Fatal("inherit did not remove override")
 	}
-	// Ошибка Apache возвращает хранилище и vhost, не отзывая действующие сессии.
+	// An Apache error restores the store and the vhost without revoking valid sessions.
 	before := readTestFile(t, passwordPath(s))
 	vhost := readTestFile(t, vhostPath(s, "inherit"))
 	if err := os.WriteFile(session("inherit"), nil, 0600); err != nil {
@@ -132,8 +132,8 @@ func TestProtectHostOnlyPasswordAndMigration(t *testing.T) {
 	if before != readTestFile(t, passwordPath(s)) {
 		t.Fatal("failed inherit changed storage")
 	}
-	// Старый vhost и сессии DLE: пароль можно задать до подключения нового mount.
-	data := strings.Replace(readTestFile(t, vhostPath(s, "shop")), "Вход по отдельному паролю сайта", "Вход по логину и паролю администратора DLE", 1)
+	// Old vhost and DLE sessions: the password can be set before the new mount is attached.
+	data := strings.Replace(readTestFile(t, vhostPath(s, "shop")), "Separate site password login", legacyGateMarker, 1)
 	if err := os.WriteFile(vhostPath(s, "shop"), []byte(data), 0644); err != nil {
 		t.Fatal(err)
 	}

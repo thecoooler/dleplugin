@@ -153,14 +153,14 @@ func Run(ctx context.Context, opts Options, log func(string)) error {
 		}
 		return result, nil
 	}
-	log("HTTP: сессия установщика и лицензия")
+	log("HTTP: installer session and license")
 	if err := html("", nil, `value="eula"`); err != nil {
 		return err
 	}
 	if err := html("eula", url.Values{"selected_language": {opts.Language}}, `id="check-eula"`); err != nil {
 		return err
 	}
-	log("HTTP: проверка PHP и прав записи")
+	log("HTTP: PHP and write permission checks")
 	body, resp, err := request("function_check", url.Values{"eula": {"on"}})
 	if err != nil {
 		return err
@@ -168,22 +168,23 @@ func Run(ctx context.Context, opts Options, log func(string)) error {
 	location, locationErr := resp.Location()
 	if resp.StatusCode == http.StatusOK && strings.Contains(body, `value="chmod_check"`) {
 		if opts.RemoveInstaller == nil {
-			return fmt.Errorf("DLE 11.0–14.2 requires local installer cleanup; provide --root for dle-install")
+			return fmt.Errorf("DLE 11.0–14.2 requires local installer cleanup (Options.RemoveInstaller)")
 		}
 		// 11.0–11.1 also show non-blocking recommendations below required PHP
 		// checks. A red recommendation (e.g. output_buffering) is not a failure.
+		// The Russian strings below are the texts of the installer pages.
 		requirements := strings.Split(strings.Split(body, "Рекомендуемые настройки")[0], "</table>")[0]
 		if !submitControl.MatchString(body) || failedRequirement.MatchString(requirements) {
 			return failure("function_check", body)
 		}
-		log("HTTP: проверка прав записи")
+		log("HTTP: write permission check")
 		if err := html("chmod_check", nil, `value="doconfig"`, "Проверка успешно завершена"); err != nil {
 			return err
 		}
 		if err := html("doconfig", nil, `name="dbhost"`, `name="reg_username"`); err != nil {
 			return err
 		}
-		log("HTTP: установка БД, конфигурации и администратора")
+		log("HTTP: database, configuration and administrator")
 		if err := html("doinstall", url.Values{
 			"url": {siteURL}, "alt_url": {"1"}, "allow_mb4": {"1"},
 			"dbhost": {opts.DBHost}, "dbname": {opts.DBName}, "dbuser": {opts.DBUser},
@@ -201,7 +202,7 @@ func Run(ctx context.Context, opts Options, log func(string)) error {
 	if err := html("dbconfig", nil, `name="dbhost"`, `name="dbprefix"`); err != nil {
 		return err
 	}
-	log("HTTP: подключение БД")
+	log("HTTP: database connection")
 	if _, err := jsonRequest("checkdb", url.Values{
 		"dbhost": {opts.DBHost}, "dbname": {opts.DBName}, "dbuser": {opts.DBUser},
 		"dbpasswd": {opts.DBPassword}, "dbprefix": {opts.Prefix},
@@ -211,7 +212,7 @@ func Run(ctx context.Context, opts Options, log func(string)) error {
 	if err := html("userconfig", nil, `name="reg_username"`); err != nil {
 		return err
 	}
-	log("HTTP: администратор")
+	log("HTTP: administrator")
 	if err := html("doinstall", url.Values{
 		"reg_username": {opts.Login}, "reg_password1": {opts.Password},
 		"reg_password2": {opts.Password}, "reg_email": {opts.Email},
@@ -239,7 +240,7 @@ func Run(ctx context.Context, opts Options, log func(string)) error {
 			offset, total = next, count
 		}
 	}
-	log("HTTP: сохранение конфигурации и завершение")
+	log("HTTP: saving the configuration and finishing")
 	_, err = jsonRequest("dosaveconfig", url.Values{"action": {"dosaveconfig"}})
 	return err
 }

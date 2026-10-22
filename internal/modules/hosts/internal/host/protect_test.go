@@ -43,7 +43,7 @@ func TestProtectPrecedence(t *testing.T) {
 func TestProtectRegistryCompatibility(t *testing.T) {
 	s := isolatedStack(t)
 	seedProtectPassword(t, s)
-	// Старый формат без поля protect — режим default; запись default не добавляет поле.
+	// The old format without the protect field means default; writing default adds no field.
 	legacy := `[{"name":"dle","domain":"dle.dle.icooler.opik.net","external_origin":"https://dle.dle.icooler.opik.net","dle":"21.0","php":"8.5","database":"dle_dle","created_at":"2026-10-01T00:00:00Z"}]`
 	if err := os.WriteFile(s.RegistryPath(), []byte(legacy), 0o644); err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestProtectRegistryCompatibility(t *testing.T) {
 	if strings.Contains(saved, "protect") || !strings.Contains(saved, `"domain": "dle.dle.icooler.opik.net"`) || !strings.Contains(saved, `"external_origin": "https://dle.dle.icooler.opik.net"`) {
 		t.Fatalf("registry fields changed: %s", saved)
 	}
-	// Неизвестный режим (ручная правка) не должен молча выключать защиту.
+	// An unknown mode (manual edit) must not silently turn protection off.
 	for _, bad := range []string{"yes", "default", "ON"} {
 		if err := os.WriteFile(s.RegistryPath(), []byte(`[{"name":"dle","dle":"21.0","php":"8.5","database":"dle_dle","protect":"`+bad+`"}]`), 0o644); err != nil {
 			t.Fatal(err)
@@ -91,7 +91,7 @@ func TestVhostGate(t *testing.T) {
 		"RewriteRule ^ /__dlehost/login [PT,L]",
 		"SetEnv DLEHOST_GATE_TTL 2592000",
 		`-f '/var/lib/dlehost/gate/shop/' . sha1($1)`,
-		// HTTPS принимает только Secure-cookie, HTTP-алиасы — только обычную.
+		// HTTPS accepts only the Secure cookie, HTTP aliases only the plain one.
 		`req('X-Forwarded-Proto') == 'https' && %{HTTP_COOKIE} =~ /(?:^|;)\s*__Host-dlehost_gate=`,
 		`req('X-Forwarded-Proto') != 'https' && %{HTTP_COOKIE} =~ /(?:^|;)\s*dlehost_gate=`,
 		`ProxyFCGISetEnvIf "req('X-Forwarded-Proto') == 'https'" HTTPS "on"`,
@@ -103,16 +103,16 @@ func TestVhostGate(t *testing.T) {
 	if strings.Contains(gated, "WWW-Authenticate") || strings.Contains(gated, "AuthType") || strings.Contains(gated, "<Location />") {
 		t.Fatal("Basic auth or claimed Require backstop in vhost")
 	}
-	// Локальный хост без HTTPS-origin знает только обычную cookie.
+	// A local host without an HTTPS origin knows only the plain cookie.
 	local := vhostConfig(Host{Name: "dev", DLE: "21.0", PHP: "7.4"}, true, 0)
 	if strings.Contains(local, "__Host-") || strings.Contains(local, "X-Forwarded-Proto") || !strings.Contains(local, "SetEnv DLEHOST_GATE_TTL 0") {
 		t.Fatalf("local gate:\n%s", local)
 	}
 }
 
-// fakeDocker подменяет docker: пишет вызовы (и stdin) в журнал и падает,
-// если аргументы или stdin содержат строку из файла fail. При graceful
-// отмечает, существует ли уже каталог из DLEHOST_TEST_WATCH.
+// fakeDocker replaces docker: it logs calls (and stdin) and fails when the
+// arguments or stdin contain the string from the fail file. On graceful it
+// records whether the directory from DLEHOST_TEST_WATCH already exists.
 func fakeDocker(t *testing.T) (calls, fail string) {
 	t.Helper()
 	bin := t.TempDir()
@@ -151,7 +151,7 @@ func TestApplyProtectGlobal(t *testing.T) {
 	committed := 0
 	commit := func() error { committed++; return nil }
 
-	// on-хост закрывается и при глобальном off: режим хоста приоритетнее.
+	// An on host is closed even with global off: the host mode wins.
 	if _, err := SetProtect(s, "on", "on", ProtectSettings{}, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestApplyProtectGlobal(t *testing.T) {
 	if !strings.Contains(log, "exec -T -u www-data apache sh -c test -r /opt/dlehost/gate/gate.php") || !strings.Contains(log, "php85") || !strings.Contains(log, "graceful") {
 		t.Fatalf("gate check or reload missing:\n%s", log)
 	}
-	// Повтор без изменений не трогает apache.
+	// A repeat without changes does not touch apache.
 	before := readTestFile(t, calls)
 	if err := ApplyProtect(s, ProtectSettings{Global: true}, ProtectSettings{}, commit, func(string) {}); err != nil {
 		t.Fatal(err)
@@ -194,7 +194,7 @@ func TestApplyProtectGlobal(t *testing.T) {
 	if _, err := os.Stat(s.GateDir("on")); err != nil {
 		t.Fatal("sessions of protected host removed")
 	}
-	// default снова следует глобальной настройке.
+	// default follows the global setting again.
 	if _, err := SetProtect(s, "off", "default", ProtectSettings{}, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestApplyProtectRollback(t *testing.T) {
 	vhost := readTestFile(t, vhostPath(s, "shop"))
 	registry := readTestFile(t, s.RegistryPath())
 
-	// apache не принял конфиг: vhost и реестр прежние.
+	// apache rejected the config: vhost and registry unchanged.
 	if err := os.WriteFile(fail, []byte("configtest"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestApplyProtectRollback(t *testing.T) {
 	if err := os.Remove(fail); err != nil {
 		t.Fatal(err)
 	}
-	// Конфиг не сохранился: vhost возвращается, apache перезагружается снова.
+	// The config was not saved: the vhost is restored and apache reloaded again.
 	err := ApplyProtect(s, ProtectSettings{Global: true}, ProtectSettings{}, func() error { return errors.New("disk full") }, func(string) {})
 	if err == nil || !strings.Contains(err.Error(), "disk full") {
 		t.Fatalf("commit failure: %v", err)
@@ -326,7 +326,7 @@ func TestProtectSessionTTL(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// never → 30d: срок стал короче — сессии без истечения удаляются, каталог остаётся.
+	// never → 30d: the lifetime got shorter, so non-expiring sessions are removed and the directory stays.
 	month := ProtectSettings{SessionTTL: 30 * 24 * time.Hour}
 	apply(month, unlimited)
 	if !strings.Contains(readTestFile(t, vhostPath(s, "on")), "SetEnv DLEHOST_GATE_TTL 2592000") {
@@ -341,14 +341,14 @@ func TestProtectSessionTTL(t *testing.T) {
 	if info, err := os.Stat(s.GateDir("on")); err != nil || !info.IsDir() {
 		t.Fatal("session dir of protected host removed")
 	}
-	// 30d → never и 30d → 60d: срок длиннее — сессии сохраняются.
+	// 30d → never and 30d → 60d: the lifetime got longer, so sessions are kept.
 	writeSession()
 	apply(ProtectSettings{SessionTTL: 60 * 24 * time.Hour}, month)
 	apply(unlimited, ProtectSettings{SessionTTL: 60 * 24 * time.Hour})
 	if _, err := os.Stat(session); err != nil {
 		t.Fatal("sessions removed after extending TTL")
 	}
-	// Неудачная запись конфига: vhost и сессии прежние.
+	// Failed config write: vhost and sessions unchanged.
 	before := readTestFile(t, vhostPath(s, "on"))
 	if err := ApplyProtect(s, month, unlimited, func() error { return errors.New("disk full") }, func(string) {}); err == nil {
 		t.Fatal("commit failure ignored")
@@ -362,7 +362,7 @@ func TestProtectSessionTTL(t *testing.T) {
 	if !strings.Contains(readTestFile(t, calls), "graceful") {
 		t.Fatal("apache not reloaded")
 	}
-	// reset завершает сессии хоста, каталог закрытого хоста остаётся.
+	// reset ends the host sessions; the directory of a closed host stays.
 	if err := ResetSessions(s, "on", func(string) {}); err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +385,7 @@ func TestApplyProtectRestoresMissingVhost(t *testing.T) {
 	if err := os.Remove(vhostPath(s, "lost")); err != nil {
 		t.Fatal(err)
 	}
-	// Отказ apache: восстановленный файл снова удаляется, прочие возвращаются.
+	// Apache refused: the restored file is removed again, the others are restored.
 	if err := os.WriteFile(fail, []byte("configtest"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +402,7 @@ func TestApplyProtectRestoresMissingVhost(t *testing.T) {
 	if err := os.Remove(fail); err != nil {
 		t.Fatal(err)
 	}
-	// Успех: отсутствовавший vhost восстановлен из реестра и закрыт формой.
+	// Success: the missing vhost is restored from the registry and closed by the form.
 	if err := ApplyProtect(s, ProtectSettings{Global: true}, ProtectSettings{}, func() error { return nil }, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +422,7 @@ func TestRemoveKeepsHostClosedOnFailure(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(s.HostDir("shop"), "engine"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Ошибка удаления базы: файлы, закрытый vhost и реестр на месте.
+	// Database removal error: files, closed vhost and registry stay.
 	if err := os.WriteFile(fail, []byte("DROP DATABASE"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +438,7 @@ func TestRemoveKeepsHostClosedOnFailure(t *testing.T) {
 	if hosts, _ := loadRegistry(s); hosts["shop"].Name == "" {
 		t.Fatal("registry entry removed")
 	}
-	// Повтор после устранения ошибки удаляет всё, vhost — после файлов.
+	// A repeat after the fix removes everything, the vhost after the files.
 	if err := os.Remove(fail); err != nil {
 		t.Fatal(err)
 	}
@@ -479,7 +479,7 @@ func TestAddPublishesFilesAfterVhost(t *testing.T) {
 	if entries, _ := os.ReadDir(s.StagingDir()); len(entries) != 0 {
 		t.Fatal("staging left")
 	}
-	// Контроль самой проверки: перезагрузка при опубликованных файлах отмечается.
+	// Control of the check itself: a reload with published files is recorded.
 	if _, err := SetProtect(s, "shop", "off", ProtectSettings{}, func(string) {}); err != nil {
 		t.Fatal(err)
 	}
@@ -488,7 +488,7 @@ func TestAddPublishesFilesAfterVhost(t *testing.T) {
 	}
 }
 
-// Хеш известного тестового пароля, с той же стоимостью, что у CLI и PHP.
+// Hash of a known test password, with the same cost as the CLI and PHP.
 const testProtectHash = "$2a$10$pMVK93Fjc2/Dp9KllbU9Ju1StdQUNCkzO1nXCik70k9DYSVYoby72"
 
 func seedProtectPassword(t *testing.T, s *stack.Stack) {

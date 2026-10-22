@@ -64,7 +64,7 @@ func finishInstallation(dir string) error {
 	}
 	skin := skinConfigRE.FindSubmatch(data)
 	if skin == nil {
-		return fmt.Errorf("установщик не сохранил имя шаблона")
+		return fmt.Errorf("the installer did not save the template name")
 	}
 	for _, file := range []string{"engine/data/dbconfig.php", "templates/" + string(skin[1]) + "/main.tpl"} {
 		if _, err := os.Stat(filepath.Join(dir, file)); err != nil {
@@ -72,7 +72,7 @@ func finishInstallation(dir string) error {
 		}
 	}
 	if _, err := os.Stat(filepath.Join(dir, "install.php")); !os.IsNotExist(err) {
-		return fmt.Errorf("установщик не удалил install.php")
+		return fmt.Errorf("the installer did not remove install.php")
 	}
 	// Older installers leave the template zip; it is not needed by the installed site.
 	if err := os.Remove(filepath.Join(dir, "templates/default_templates.zip")); err != nil && !os.IsNotExist(err) {
@@ -94,7 +94,7 @@ func prepareInstallerFiles(s *stack.Stack, dir string) error {
 	uid, e1 := strconv.Atoi(s.Env["UID"])
 	gid, e2 := strconv.Atoi(s.Env["GID"])
 	if e1 != nil || e2 != nil {
-		return fmt.Errorf("установка: UID/GID в .env не заданы")
+		return fmt.Errorf("install: UID/GID are not set in .env")
 	}
 	return filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {

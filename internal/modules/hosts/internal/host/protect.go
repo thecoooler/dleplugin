@@ -12,26 +12,26 @@ import (
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/stack"
 )
 
-// Режимы формы входа хоста (dlehost protect). В реестре default хранится
-// пустым значением, поэтому старые записи без поля наследуют глобальную настройку.
+// Host login form modes (hosts protect). The registry stores default as an
+// empty value, so old entries without the field follow the global setting.
 const (
 	ProtectDefault = "default"
 	ProtectOn      = "on"
 	ProtectOff     = "off"
 )
 
-// ProtectSettings — глобальные настройки формы входа из конфига.
+// ProtectSettings are the global login form settings from the config.
 type ProtectSettings struct {
-	Global     bool          // форма для хостов в режиме default
-	SessionTTL time.Duration // срок сессии; 0 — без серверного истечения
+	Global     bool          // form for hosts in the default mode
+	SessionTTL time.Duration // session lifetime; 0 means no server-side expiry
 }
 
-// shorter: сессии, выданные при old, могут жить дольше, чем разрешает s.
+// shorter reports that sessions issued under old may outlive what s allows.
 func (s ProtectSettings) shorter(old ProtectSettings) bool {
 	return s.SessionTTL > 0 && (old.SessionTTL == 0 || s.SessionTTL < old.SessionTTL)
 }
 
-// ParseProtect переводит режим из CLI в значение поля реестра.
+// ParseProtect converts a CLI mode to the registry field value.
 func ParseProtect(mode string) (string, error) {
 	switch mode {
 	case ProtectDefault, "":
@@ -39,10 +39,10 @@ func ParseProtect(mode string) (string, error) {
 	case ProtectOn, ProtectOff:
 		return mode, nil
 	}
-	return "", fmt.Errorf("режим входа %q: допустимы default, on, off", mode)
+	return "", fmt.Errorf("protect mode %q: use default, on or off", mode)
 }
 
-// ProtectMode — режим хоста для вывода: default, on или off.
+// ProtectMode is the host mode for output: default, on or off.
 func (h Host) ProtectMode() string {
 	if h.Protect == "" {
 		return ProtectDefault
@@ -50,7 +50,7 @@ func (h Host) ProtectMode() string {
 	return h.Protect
 }
 
-// Protected — закрыт ли хост формой входа при глобальной настройке global.
+// Protected reports whether the login form closes the host under the global setting.
 func (h Host) Protected(global bool) bool {
 	switch h.Protect {
 	case ProtectOn:
@@ -61,18 +61,18 @@ func (h Host) Protected(global bool) bool {
 	return global
 }
 
-// gateMarker есть только в vhost'ах, закрытых формой входа.
+// gateMarker is present only in vhosts closed by the login form.
 const gateMarker = "SetEnv DLEHOST_GATE_SITE "
 
-// Значение cookie: <срок UTC, как %{TIME} в apache>-<256 бит base64url>.
+// Cookie value: <UTC expiry, like %{TIME} in apache>-<256-bit base64url>.
 const cookieValueRe = `(([0-9]{14})-[A-Za-z0-9_-]{43})\s*(?:;|$)`
 
-// gateExpr — условие действующей сессии. Имя cookie зависит от схемы так
-// же, как в gate.php: на HTTPS (X-Forwarded-Proto: https у публичных
-// HTTPS-хостов, как и FastCGI HTTPS=on) принимается только Secure-cookie
-// __Host-dlehost_gate, иначе только dlehost_gate. Срок в значении не
-// истёк, и для значения есть файл с отпечатком действующего bcrypt-хеша
-// в каталоге сессий хоста. Старый пароль не даёт действующую сессию.
+// gateExpr is the valid session condition. The cookie name depends on the
+// scheme as in gate.php: over HTTPS (X-Forwarded-Proto: https for public
+// HTTPS hosts, like FastCGI HTTPS=on) only the Secure cookie
+// __Host-dlehost_gate is accepted, otherwise only dlehost_gate. The expiry in
+// the value has not passed, and the host session directory has a file for the
+// value with the fingerprint of the effective bcrypt hash. An old password gives no valid session.
 func gateExpr(h Host) string {
 	plain := `%{HTTP_COOKIE} =~ /(?:^|;)\s*dlehost_gate=` + cookieValueRe + `/`
 	cookie := plain
@@ -83,14 +83,14 @@ func gateExpr(h Host) string {
 	return fmt.Sprintf(`%s && $2 > %%{TIME} && -f '%s/%s/' . sha1($1) . '-v2-%s'`, cookie, stack.ContainerGateDir, h.Name, h.gateKey)
 }
 
-// gateConfig закрывает весь vhost формой входа правилом mod_rewrite уровня
-// vhost. Оно выполняется при сопоставлении URL до чтения .htaccess, поэтому
-// правила сайта (RewriteEngine Off, Satisfy Any, Require в <If> и т.п.) его
-// не отменяют; запрос без сессии уходит в форму. Это единственная проверка:
-// отдельного резервного Require нет. Ограничения .htaccess сайта после входа
-// действуют как обычно. Без входа доступны только /__dlehost/login и logout.
+// gateConfig closes the whole vhost with the login form through a vhost-level
+// mod_rewrite rule. It runs during URL mapping before .htaccess is read, so
+// site rules (RewriteEngine Off, Satisfy Any, Require in <If> and so on) do
+// not cancel it; a request without a session goes to the form. This is the only
+// check: there is no separate fallback Require. The site .htaccess restrictions
+// apply as usual after login. Without login only /__dlehost/login and logout are open.
 func gateConfig(h Host, ttl time.Duration) string {
-	return fmt.Sprintf(`    # Вход по отдельному паролю сайта (dlehost protect)
+	return fmt.Sprintf(`    # Separate site password login (hosts protect)
     %[1]s%[2]s
     SetEnv DLEHOST_GATE_TTL %[3]d
     AliasMatch "^/__dlehost/(login|logout)$" "%[4]s/gate.php"
@@ -104,8 +104,8 @@ func gateConfig(h Host, ttl time.Duration) string {
 `, gateMarker, h.Name, int64(ttl/time.Second), stack.ContainerGateApp, gateExpr(h))
 }
 
-// gateAliases перехватывает у автохостов 90-auto.conf адреса <имя>.localhost
-// и <имя>.*.localhost, которые иначе отдали бы каталог хоста без формы.
+// gateAliases takes <name>.localhost and <name>.*.localhost from the 90-auto.conf
+// auto hosts, which would otherwise serve the host directory without the form.
 func gateAliases(h Host) string {
 	return fmt.Sprintf("    ServerAlias %[1]s.localhost %[1]s.*.localhost\n", h.Name)
 }
@@ -115,21 +115,21 @@ func ensureGateDir(s *stack.Stack, name string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	// От root каталог передаётся пользователю контейнеров (UID/GID из .env).
+	// As root, the directory is handed to the container user (UID/GID from .env).
 	if os.Getuid() == 0 {
 		uid, err1 := strconv.Atoi(s.Env["UID"])
 		gid, err2 := strconv.Atoi(s.Env["GID"])
 		if err1 != nil || err2 != nil {
-			return fmt.Errorf("UID/GID в .env не заданы: каталог %s нужно передать пользователю контейнеров", dir)
+			return fmt.Errorf("UID/GID are not set in .env: directory %s must be handed to the container user", dir)
 		}
 		return os.Chown(dir, uid, gid)
 	}
 	return nil
 }
 
-// clearSessions удаляет все сессии формы входа хоста: без файла сессии
-// apache cookie не примет. keep оставляет пустой каталог закрытому хосту
-// (при запуске от root php не смог бы создать его сам).
+// clearSessions removes all login form sessions of a host: without a session
+// file apache does not accept the cookie. keep leaves an empty directory for a
+// closed host (as root, php could not create it itself).
 func clearSessions(s *stack.Stack, name string, keep bool) error {
 	dir := s.GateDir(name)
 	if !keep {
@@ -151,15 +151,15 @@ func clearSessions(s *stack.Stack, name string, keep bool) error {
 	return errors.Join(errs...)
 }
 
-// applyVhosts приводит vhost'ы hosts к настройкам формы входа, проверяет и
-// перезагружает apache, затем выполняет commit (запись реестра или
-// конфига). При ошибке на любом шаге прежние vhost'ы возвращаются (заново
-// созданные удаляются) и apache перезагружается снова, так что защита не
-// числится включённой без применения. Переписываются vhost'ы, у которых
-// меняется состояние формы, закрытые vhost'ы с иными параметрами формы и
-// отсутствующие vhost'ы хостов реестра (восстанавливаются из реестра, иначе
-// закрытый хост остался бы открыт через автохост <имя>.localhost).
-// clear — хосты, чьи сессии удаляются после успешного commit.
+// applyVhosts brings the vhosts of hosts to the login form settings, checks and
+// reloads apache, then runs commit (writing the registry or the config). On
+// error at any step the previous vhosts are restored (newly created ones are
+// removed) and apache is reloaded again, so protection is never recorded as
+// enabled without being applied. Rewritten are vhosts whose form state
+// changes, closed vhosts with other form parameters, and missing vhosts of
+// registry hosts (restored from the registry, otherwise a closed host would stay
+// open through the <name>.localhost auto host).
+// clear selects the hosts whose sessions are removed after a successful commit.
 func applyVhosts(s *stack.Stack, hosts []Host, settings ProtectSettings, commit func() error, clear func(h Host, wasProtected bool) bool, log func(string)) error {
 	type change struct {
 		h            Host
@@ -173,7 +173,7 @@ func applyVhosts(s *stack.Stack, hosts []Host, settings ProtectSettings, commit 
 	if err != nil {
 		return err
 	}
-	// Сначала проверяем весь набор, чтобы ошибка не оставила частичных изменений.
+	// Check the whole set first so that an error leaves no partial changes.
 	for _, h := range hosts {
 		if h.Protected(settings.Global) && passwords.effective(h.Name) == "" {
 			return missingPassword(h.Name)
@@ -193,7 +193,7 @@ func applyVhosts(s *stack.Stack, hosts []Host, settings ProtectSettings, commit 
 		old, err := os.ReadFile(path)
 		existed := err == nil
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("vhost хоста %s: %w", h.Name, err)
+			return fmt.Errorf("vhost of host %s: %w", h.Name, err)
 		}
 		wasProtected := strings.Contains(string(old), gateMarker)
 		if existed && wasProtected == protected && (!protected || string(old) == want) {
@@ -238,29 +238,29 @@ func applyVhosts(s *stack.Stack, hosts []Host, settings ProtectSettings, commit 
 			}
 		}
 		if len(errs) > 0 {
-			return fmt.Errorf("%w; вернуть прежние vhost'ы не удалось: %v", cause, errors.Join(errs...))
+			return fmt.Errorf("%w; restoring the previous vhosts failed: %v", cause, errors.Join(errs...))
 		}
-		return fmt.Errorf("%w (прежние vhost'ы возвращены)", cause)
+		return fmt.Errorf("%w (previous vhosts restored)", cause)
 	}
 	for _, c := range changes {
-		state := "выключена"
+		state := "off"
 		if c.protected {
-			state = "включена"
+			state = "on"
 		}
 		switch {
 		case !c.existed:
-			log("vhost " + c.h.Name + " отсутствовал — восстановлен из реестра, форма входа " + state)
+			log("vhost " + c.h.Name + " was missing, restored from the registry, login form " + state)
 		case c.wasProtected != c.protected:
-			log("форма входа " + c.h.Name + ": " + state)
+			log("login form " + c.h.Name + ": " + state)
 		default:
-			log("форма входа " + c.h.Name + ": новые параметры")
+			log("login form " + c.h.Name + ": new parameters")
 		}
 		if err := os.WriteFile(c.path, []byte(vhostConfig(c.h, c.protected, settings.SessionTTL)), 0o644); err != nil {
 			return restore(err)
 		}
 	}
 	if len(changes) > 0 {
-		log("перезагрузка apache")
+		log("reloading apache")
 		if err := s.ReloadApache(); err != nil {
 			return restore(err)
 		}
@@ -270,19 +270,19 @@ func applyVhosts(s *stack.Stack, hosts []Host, settings ProtectSettings, commit 
 	}
 	var errs []error
 	for _, c := range cleared {
-		log("сессии формы входа " + c.name + " удалены")
+		log("login form sessions of " + c.name + " removed")
 		if err := clearSessions(s, c.name, c.keep); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	if len(errs) > 0 {
-		return fmt.Errorf("настройки применены, но удалить сессии не удалось: %w", errors.Join(errs...))
+		return fmt.Errorf("settings applied, but removing sessions failed: %w", errors.Join(errs...))
 	}
 	return nil
 }
 
-// SetProtect меняет режим формы входа хоста name: default, on или off.
-// При выключении сессии хоста удаляются.
+// SetProtect changes the login form mode of host name: default, on or off.
+// Turning it off removes the host sessions.
 func SetProtect(s *stack.Stack, name, mode string, settings ProtectSettings, log func(string)) (Host, error) {
 	value, err := ParseProtect(mode)
 	if err != nil {
@@ -294,7 +294,7 @@ func SetProtect(s *stack.Stack, name, mode string, settings ProtectSettings, log
 	}
 	h, ok := hosts[name]
 	if !ok {
-		return Host{}, fmt.Errorf("хост %s не найден среди созданных через dlehost", name)
+		return Host{}, fmt.Errorf("host %s is not among the hosts created by hosts add", name)
 	}
 	h.Protect = value
 	hosts[name] = h
@@ -302,11 +302,11 @@ func SetProtect(s *stack.Stack, name, mode string, settings ProtectSettings, log
 	return h, applyVhosts(s, []Host{h}, settings, func() error { return saveRegistry(s, hosts) }, clear, log)
 }
 
-// ApplyProtect применяет новые глобальные настройки settings (прежние —
-// prev) ко всем хостам реестра; commit сохраняет их в конфиге после
-// перезагрузки apache. Сессии удаляются у хостов, где форма выключается,
-// и у всех закрытых хостов, если срок сессии стал короче: выданные раньше
-// сессии иначе жили бы дольше нового срока.
+// ApplyProtect applies the new global settings (previously prev) to all
+// registry hosts; commit saves them to the config after apache reloads.
+// Sessions are removed for hosts where the form turns off, and for all closed
+// hosts when the session lifetime gets shorter: sessions issued earlier would
+// otherwise outlive the new lifetime.
 func ApplyProtect(s *stack.Stack, settings, prev ProtectSettings, commit func() error, log func(string)) error {
 	hosts, err := loadRegistry(s)
 	if err != nil {
@@ -323,8 +323,8 @@ func ApplyProtect(s *stack.Stack, settings, prev ProtectSettings, commit func() 
 	return applyVhosts(s, list, settings, commit, clear, log)
 }
 
-// ResetSessions завершает все сессии формы входа хоста name (или всех
-// хостов реестра, если name пустое). Пользователям нужно войти заново.
+// ResetSessions ends all login form sessions of host name (or of all registry
+// hosts when name is empty). Users have to log in again.
 func ResetSessions(s *stack.Stack, name string, log func(string)) error {
 	hosts, err := loadRegistry(s)
 	if err != nil {
@@ -332,14 +332,14 @@ func ResetSessions(s *stack.Stack, name string, log func(string)) error {
 	}
 	if name != "" {
 		if _, ok := hosts[name]; !ok {
-			return fmt.Errorf("хост %s не найден среди созданных через dlehost", name)
+			return fmt.Errorf("host %s is not among the hosts created by hosts add", name)
 		}
 		hosts = map[string]Host{name: hosts[name]}
 	}
 	var errs []error
 	for n := range hosts {
 		if _, err := os.Stat(s.GateDir(n)); err == nil {
-			log("сессии формы входа " + n + " удалены")
+			log("login form sessions of " + n + " removed")
 		}
 		if err := clearSessions(s, n, true); err != nil {
 			errs = append(errs, err)

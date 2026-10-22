@@ -20,38 +20,38 @@ func TestEnsure(t *testing.T) {
 
 	updated, err := ensure(dir)
 	if err != nil || !updated {
-		t.Fatalf("первый запуск: updated=%v err=%v", updated, err)
+		t.Fatalf("first run: updated=%v err=%v", updated, err)
 	}
 	for _, rel := range []string{"docker-compose.yml", "config/apache/sites/05-fallback.conf", "config/apache/sites/90-auto.conf", "docker/php/Dockerfile", "www/localhost/index.php", ".env"} {
 		read(rel)
 	}
 	for _, d := range []string{"data", "logs/apache"} {
 		if info, err := os.Stat(filepath.Join(dir, d)); err != nil || !info.IsDir() {
-			t.Fatalf("нет каталога %s", d)
+			t.Fatalf("missing directory %s", d)
 		}
 	}
 	if !strings.Contains(read(".env"), "HTTP_PORT=80") {
-		t.Fatal(".env без HTTP_PORT")
+		t.Fatal(".env without HTTP_PORT")
 	}
 
-	// Пользовательские файлы не трогаются, удалённый служебный — восстанавливается.
+	// User files are kept, a removed service file is restored.
 	os.WriteFile(filepath.Join(dir, ".env"), []byte("HTTP_PORT=8080\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "www/localhost/index.php"), []byte("mine"), 0o644)
 	os.Remove(filepath.Join(dir, "docker-compose.yml"))
 	os.RemoveAll(filepath.Join(dir, "www/localhost"))
 	if updated, err := ensure(dir); err != nil || updated {
-		t.Fatalf("повторный запуск: updated=%v err=%v", updated, err)
+		t.Fatalf("second run: updated=%v err=%v", updated, err)
 	}
 	read("docker-compose.yml")
 	if read(".env") != "HTTP_PORT=8080\n" {
-		t.Fatal(".env перезаписан")
+		t.Fatal(".env overwritten")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "www/localhost")); err == nil {
-		t.Fatal("заготовка www/ восстановлена после удаления")
+		t.Fatal("www/ seed restored after removal")
 	}
 
-	// Новая версия бинарника: служебные файлы перезаписываются,
-	// исчезнувшие из неё — удаляются, файлы вне манифеста остаются.
+	// New binary version: service files are overwritten, files it no longer
+	// has are removed, files outside the manifest stay.
 	compose := read("docker-compose.yml")
 	os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("old"), 0o644)
 	os.WriteFile(filepath.Join(dir, "config/old.conf"), nil, 0o644)
@@ -65,13 +65,13 @@ func TestEnsure(t *testing.T) {
 	manifest := "oldhash\n" + strings.Join(append(files, "config/old.conf", "../outside"), "\n") + "\n"
 	os.WriteFile(filepath.Join(dir, stackManifest), []byte(manifest), 0o644)
 	if updated, err := ensure(dir); err != nil || !updated {
-		t.Fatalf("обновление: updated=%v err=%v", updated, err)
+		t.Fatalf("update: updated=%v err=%v", updated, err)
 	}
 	if read("docker-compose.yml") != compose {
-		t.Fatal("docker-compose.yml не обновлён")
+		t.Fatal("docker-compose.yml not updated")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "config/old.conf")); err == nil {
-		t.Fatal("устаревший файл не удалён")
+		t.Fatal("stale file not removed")
 	}
 	read("config/apache/sites/60-host-shop.conf")
 	read("config/apache/sites/05-fallback.conf")
@@ -91,7 +91,7 @@ func TestPending(t *testing.T) {
 		return p
 	}
 	if !pending() {
-		t.Fatal("новый стек не помечен к применению")
+		t.Fatal("new stack not marked pending")
 	}
 	hash, _, err := s.Pending()
 	if err != nil {
@@ -101,12 +101,12 @@ func TestPending(t *testing.T) {
 		t.Fatal(err)
 	}
 	if pending() {
-		t.Fatal("после MarkApplied стек всё ещё к применению")
+		t.Fatal("stack still pending after MarkApplied")
 	}
-	// up выполнялся со служебными файлами прежней версии бинарника.
+	// up ran with the service files of the previous binary version.
 	os.WriteFile(filepath.Join(s.Dir, stackApplied), []byte("oldhash\n"), 0o644)
 	if !pending() {
-		t.Fatal("обновлённый стек не помечен к применению")
+		t.Fatal("updated stack not marked pending")
 	}
 }
 
@@ -149,11 +149,11 @@ func TestDotEnvSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf(".env: права %o", perm)
+		t.Fatalf(".env: mode %o", perm)
 	}
 
 	t.Setenv("DLEHOST_DB_ROOT_PASSWORD", "it's")
 	if _, err := Open(t.TempDir()); err == nil {
-		t.Fatal("значение с одинарной кавычкой принято")
+		t.Fatal("value with a single quote accepted")
 	}
 }

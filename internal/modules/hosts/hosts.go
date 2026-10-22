@@ -1,50 +1,60 @@
-package main
+// Package hosts implements the hosts module: DLE sites in a local Docker
+// stack (Apache, PHP-FPM, MariaDB) built from files embedded in the binary.
+package hosts
 
 import (
-	"bufio"
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	config "github.com/thecoooler/dleplugin/internal/modules/hosts/internal/hostconfig"
+	"github.com/thecoooler/dleplugin/internal/app"
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/dist"
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/host"
+	config "github.com/thecoooler/dleplugin/internal/modules/hosts/internal/hostconfig"
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/stack"
 )
 
-func main() {
-	if err := rootCmd().Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "ошибка:", err)
-		os.Exit(1)
-	}
+type module struct{}
+
+// Module returns the hosts module.
+func Module() app.Module { return module{} }
+
+func (module) Name() string { return "hosts" }
+
+func (module) Commands(rt *app.Runtime) []*cobra.Command {
+	return []*cobra.Command{hostsCommand(rt)}
 }
 
-func rootCmd() *cobra.Command {
-	root := &cobra.Command{
-		Use:           "dlehost",
-		Short:         "Управление хостами DLE в docker-стеке",
-		SilenceUsage:  true,
-		SilenceErrors: true,
+func hostsCommand(rt *app.Runtime) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "hosts",
+		GroupID: app.GroupHosts,
+		Short:   "Manage DLE sites in a local Docker stack",
+		Long: `Manage DLE sites in a local Docker stack (Apache, PHP 8.5/7.4, MariaDB).
+
+The stack files are embedded in the binary; only Docker with Compose and
+DLE distributions are needed. The hosts settings are kept separately from the
+dleplugin config, in ~/.config/dlehost/config.yml (DLEHOST_CONFIG), and the
+stack lives in ~/.local/share/dlehost (DLEHOST_DIR or project_dir).`,
+		Args: cobra.NoArgs,
 	}
-	root.AddCommand(upCmd(), downCmd(), composeCmd(), listCmd(), addCmd(), removeCmd(), protectCmd(), pathCmd(), portCmd(), versionsCmd(), configCmd())
-	return root
+	cmd.AddCommand(upCmd(rt), downCmd(rt), composeCmd(rt), listCmd(rt), addCmd(rt), removeCmd(rt),
+		protectCmd(rt), pathCmd(rt), portCmd(rt), versionsCmd(rt), configCmd(rt))
+	return cmd
 }
 
-// env загружает конфиг и готовит каталог стека.
-func env() (*config.Config, *stack.Stack, error) {
+// env loads the config and prepares the stack directory.
+func env(rt *app.Runtime) (*config.Config, *stack.Stack, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, nil, err
@@ -54,12 +64,12 @@ func env() (*config.Config, *stack.Stack, error) {
 		return nil, nil, err
 	}
 	if s.Updated {
-		fmt.Fprintf(os.Stderr, "Файлы стека в %s созданы или обновлены — примените: dlehost up\n", s.Dir)
+		rt.UI.Warningf("Stack files in %s were created or updated; apply them with: dleplugin hosts up", s.Dir)
 	}
 	return cfg, s, nil
 }
 
-// stackOnly — как env, но без подсказки про dlehost up.
+// stackOnly is env without the hint about dleplugin hosts up.
 func stackOnly() (*stack.Stack, error) {
 	cfg, err := config.Load()
 	if err != nil {
@@ -80,12 +90,15 @@ func openStack(cfg *config.Config) (*stack.Stack, error) {
 	return s, nil
 }
 
-func step(msg string) { fmt.Println("→", msg) }
+// stepper returns the progress logger handed to the services.
+func stepper(rt *app.Runtime) func(string) {
+	return func(msg string) { rt.UI.Info("→ " + msg) }
+}
 
-func upCmd() *cobra.Command {
+func upCmd(rt *app.Runtime) *cobra.Command {
 	return &cobra.Command{
 		Use:   "up",
-		Short: "Собрать и запустить docker-стек (повторный запуск применяет обновления)",
+		Short: "Build and start the Docker stack (running it again applies updates)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
@@ -105,28 +118,28 @@ func upCmd() *cobra.Command {
 			}
 			upArgs := []string{"up", "-d", "--build", "--remove-orphans"}
 			if pending {
-				// конфиги смонтированы в контейнеры, compose их изменений не видит
+				// configs are mounted into the containers; compose does not see their changes
 				upArgs = append(upArgs, "--force-recreate")
 			}
 			if err := s.ComposeAttached(upArgs...); err != nil {
 				return err
 			}
-			if err := host.ApplyProtect(s, protectSettings(cfg), protectSettings(cfg), func() error { return nil }, step); err != nil {
+			if err := host.ApplyProtect(s, protectSettings(cfg), protectSettings(cfg), func() error { return nil }, stepper(rt)); err != nil {
 				return err
 			}
 			if err := s.MarkApplied(hash); err != nil {
 				return err
 			}
-			fmt.Println("\nСтек запущен:", s.LocalHostURL("localhost"))
+			rt.UI.Success("Stack is running: " + s.LocalHostURL("localhost"))
 			return nil
 		},
 	}
 }
 
-func downCmd() *cobra.Command {
+func downCmd(rt *app.Runtime) *cobra.Command {
 	return &cobra.Command{
 		Use:   "down",
-		Short: "Остановить docker-стек (сайты и базы сохраняются)",
+		Short: "Stop the Docker stack (sites and databases are kept)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := stackOnly()
@@ -138,11 +151,11 @@ func downCmd() *cobra.Command {
 	}
 }
 
-func composeCmd() *cobra.Command {
+func composeCmd(rt *app.Runtime) *cobra.Command {
 	return &cobra.Command{
-		Use:                "compose [аргументы docker compose]",
-		Short:              "Выполнить docker compose в каталоге стека",
-		Example:            "  dlehost compose ps\n  dlehost compose logs -f apache",
+		Use:                "compose [DOCKER_COMPOSE_ARGS...]",
+		Short:              "Run docker compose in the stack directory",
+		Example:            "  dleplugin hosts compose ps\n  dleplugin hosts compose logs -f apache",
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := stackOnly()
@@ -152,21 +165,21 @@ func composeCmd() *cobra.Command {
 			err = s.ComposeAttached(args...)
 			var exit *exec.ExitError
 			if errors.As(err, &exit) {
-				os.Exit(exit.ExitCode())
+				return &app.SilentExit{Code: exit.ExitCode()}
 			}
 			return err
 		},
 	}
 }
 
-func listCmd() *cobra.Command {
+func listCmd(rt *app.Runtime) *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "Список хостов",
+		Short:   "List hosts",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, s, err := env()
+			cfg, s, err := env(rt)
 			if err != nil {
 				return err
 			}
@@ -175,11 +188,11 @@ func listCmd() *cobra.Command {
 				return err
 			}
 			if len(rows) == 0 {
-				fmt.Println("Хостов нет")
+				rt.UI.Info("No hosts")
 				return nil
 			}
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ХОСТ\tURL\tDLE\tPHP\tВХОД\tСОЗДАН")
+			w := tabwriter.NewWriter(rt.UI.Out, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "HOST\tURL\tDLE\tPHP\tPROTECT\tCREATED")
 			for _, r := range rows {
 				dle, php, url, gate := "-", "-", r.URL(s), "-"
 				if r.Managed {
@@ -192,14 +205,14 @@ func listCmd() *cobra.Command {
 	}
 }
 
-func addCmd() *cobra.Command {
+func addCmd(rt *app.Runtime) *cobra.Command {
 	var dle, distArchive, php, adminLogin, adminPassword, protect string
 	cmd := &cobra.Command{
-		Use:   "add <имя>",
-		Short: "Создать хост <имя>.<base_domain> с DLE",
-		Example: "  dlehost add shop --dle 19.0\n" +
-			"  dlehost add demo --dle 11.0\n" +
-			"  dlehost add stage --protect on   # сайт только после ввода пароля protect",
+		Use:   "add NAME",
+		Short: "Create the host NAME.<base_domain> with DLE",
+		Example: "  dleplugin hosts add shop --dle 19.0\n" +
+			"  dleplugin hosts add demo --dist ~/dists/11.0.zip\n" +
+			"  dleplugin hosts add stage --protect on   # site only after the protect password",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			credentials := host.Credentials{
@@ -212,7 +225,7 @@ func addCmd() *cobra.Command {
 			if _, err := host.ParseProtect(protect); err != nil {
 				return err
 			}
-			cfg, s, err := env()
+			cfg, s, err := env(rt)
 			if err != nil {
 				return err
 			}
@@ -227,13 +240,10 @@ func addCmd() *cobra.Command {
 				dle = cfg.DefaultDLE
 			}
 			if dle == "" && distArchive == "" {
-				return fmt.Errorf("укажите --dle, --dist или задайте default_dle (список: dlehost versions)")
+				return fmt.Errorf("specify --dle, --dist or set default_dle (list: dleplugin hosts versions)")
 			}
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-
 			res, err := host.Add(s, host.AddOptions{
-				Context:     ctx,
+				Context:     cmd.Context(),
 				Name:        args[0],
 				DLE:         dle,
 				DistArchive: distArchive,
@@ -244,86 +254,96 @@ func addCmd() *cobra.Command {
 				Admin:       credentials,
 				Protect:     protect,
 				Settings:    protectSettings(cfg),
-			}, step)
+			}, stepper(rt))
 			if err != nil {
 				return err
 			}
-			fmt.Printf("\nХост %s создан (DLE %s, PHP %s)\n", res.Host.Name, res.Host.DLE, res.Host.PHP)
-			fmt.Println("URL:   ", res.URL)
-			fmt.Println("Админка:", res.URL+"admin.php")
-			fmt.Println("Логин: ", credentials.Login)
-			fmt.Println("Вход:  ", protectState(res.Host, cfg.Protect))
-			fmt.Println("База:  ", res.Host.Database)
-			fmt.Println("Файлы: ", s.HostDir(res.Host.Name))
+			rt.UI.Info("")
+			rt.UI.Successf("Host %s created (DLE %s, PHP %s)", res.Host.Name, res.Host.DLE, res.Host.PHP)
+			rt.UI.Info("URL:      " + res.URL)
+			rt.UI.Info("Admin:    " + res.URL + "admin.php")
+			rt.UI.Info("Login:    " + credentials.Login)
+			rt.UI.Info("Protect:  " + protectState(res.Host, cfg.Protect))
+			rt.UI.Info("Database: " + res.Host.Database)
+			rt.UI.Info("Files:    " + s.HostDir(res.Host.Name))
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&dle, "dle", "", "версия DLE (по умолчанию default_dle)")
-	cmd.Flags().StringVar(&distArchive, "dist", "", "путь к ZIP-архиву дистрибутива DLE (альтернатива поиску <версия>.zip в dists_dir)")
-	cmd.Flags().StringVar(&php, "php", "", "версия PHP (по умолчанию автоматически по DLE; auto или явная версия)")
-	cmd.Flags().StringVar(&adminLogin, "admin-login", "admin", "логин администратора (DLEHOST_ADMIN_LOGIN, по умолчанию admin)")
-	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "пароль администратора (DLEHOST_ADMIN_PASSWORD, по умолчанию admin)")
-	cmd.Flags().StringVar(&protect, "protect", host.ProtectDefault, "форма входа перед сайтом: default (глобальная настройка), on, off")
+	cmd.Flags().StringVar(&dle, "dle", "", "DLE version (default: default_dle)")
+	cmd.Flags().StringVar(&distArchive, "dist", "", "path to a DLE distribution ZIP (instead of <version>.zip in dists_dir)")
+	cmd.Flags().StringVar(&php, "php", "", "PHP version (default: chosen by DLE version; auto or an explicit version)")
+	cmd.Flags().StringVar(&adminLogin, "admin-login", "admin", "administrator login (DLEHOST_ADMIN_LOGIN)")
+	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "administrator password (DLEHOST_ADMIN_PASSWORD)")
+	cmd.Flags().StringVar(&protect, "protect", host.ProtectDefault, "login form in front of the site: default (global setting), on, off")
 	return cmd
 }
 
-func removeCmd() *cobra.Command {
+func removeCmd(rt *app.Runtime) *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
-		Use:     "remove <имя>",
+		Use:     "remove NAME",
 		Aliases: []string{"rm"},
-		Short:   "Удалить хост: файлы, базу, пользователя БД и vhost",
+		Short:   "Remove a host: files, database, database user and vhost",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, s, err := env()
+			_, s, err := env(rt)
 			if err != nil {
 				return err
 			}
 			name := args[0]
-			if !yes && !confirm(fmt.Sprintf("Удалить хост %s вместе с базой и файлами?", name)) {
-				fmt.Println("Отменено")
-				return nil
+			if !yes {
+				ok, err := rt.UI.Confirm(fmt.Sprintf("Remove host %s with its database and files?", name), false)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					rt.UI.Info("Cancelled")
+					return nil
+				}
 			}
-			if err := host.Remove(s, name, step); err != nil {
+			if err := host.Remove(s, name, stepper(rt)); err != nil {
 				return err
 			}
-			fmt.Printf("Хост %s удалён\n", name)
+			rt.UI.Successf("Host %s removed", name)
 			return nil
 		},
 	}
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "не спрашивать подтверждение")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
 	return cmd
 }
 
-func protectCmd() *cobra.Command {
+func protectCmd(rt *app.Runtime) *cobra.Command {
 	var inherit bool
 	cmd := &cobra.Command{
-		Use:   "protect [on|off|reset|password] | protect <имя> <default|on|off|reset|password>",
-		Short: "Форма входа по отдельному паролю перед всем сайтом",
-		Long: `Форма закрывает весь сайт отдельным паролем, без связи с учётками DLE.
-protect password задаёт общий пароль; protect <имя> password — пароль хоста.
-protect <имя> password --default возвращает хост к общему паролю.
-Пароль читается с терминала без эха с подтверждением, либо одной строкой из stdin.
-Смена пароля завершает сессии затронутых хостов. Без пароля включение запрещено.
+		Use:   "protect [on|off|reset|password] | protect NAME <default|on|off|reset|password>",
+		Short: "Password login form in front of a whole site",
+		Long: `The form closes the whole site with a separate password, unrelated to DLE
+accounts. "protect password" sets the global password; "protect NAME password"
+sets the host password; "protect NAME password --default" returns the host to
+the global password. The password is read from the terminal without echo and
+confirmed, or as a single line from stdin. Changing a password ends the
+sessions of the affected hosts. Enabling without a password is refused.
 
-Глобальная настройка (по умолчанию off) действует на хосты в режиме default;
-режимы on и off хоста её не учитывают. Срок сессии — protect_session_ttl
-(по умолчанию never). Без аргументов — настройки и наличие паролей.`,
-		Example: "  dlehost protect               # глобальная настройка и хосты\n" +
-			"  dlehost protect on            # включить для хостов в режиме default\n" +
-			"  dlehost protect shop off      # shop открыт при любой глобальной\n" +
-			"  dlehost protect shop default  # shop снова следует глобальной\n" +
-			"  dlehost protect shop reset    # завершить все сессии формы shop\n" +
-			"  dlehost config set protect_session_ttl 30d\n" +
-			"  выход: https://shop.example.com/__dlehost/logout",
+The global setting (off by default) applies to hosts in the default mode;
+the host modes on and off ignore it. The session lifetime is
+protect_session_ttl (never by default). Without arguments, shows the settings
+and which passwords are set.`,
+		Example: "  dleplugin hosts protect               # global setting and hosts\n" +
+			"  dleplugin hosts protect on            # enable for hosts in the default mode\n" +
+			"  dleplugin hosts protect shop off      # shop is open whatever the global setting\n" +
+			"  dleplugin hosts protect shop default  # shop follows the global setting again\n" +
+			"  dleplugin hosts protect shop reset    # end all form sessions of shop\n" +
+			"  dleplugin hosts config set protect_session_ttl 30d\n" +
+			"  logout: https://shop.example.com/__dlehost/logout",
 		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			step := stepper(rt)
 			passwordCommand := len(args) == 1 && args[0] == "password" || len(args) == 2 && args[1] == "password"
 			if inherit && (!passwordCommand || len(args) != 2) {
-				return fmt.Errorf("--default допустим только для protect <имя> password")
+				return fmt.Errorf("--default is only valid for protect NAME password")
 			}
 			if passwordCommand {
-				cfg, s, err := env()
+				cfg, s, err := env(rt)
 				if err != nil {
 					return err
 				}
@@ -344,21 +364,21 @@ protect <имя> password --default возвращает хост к общем�
 			switch len(args) {
 			case 1:
 				if args[0] == protectReset {
-					_, s, err := env()
+					_, s, err := env(rt)
 					if err != nil {
 						return err
 					}
 					return host.ResetSessions(s, "", step)
 				}
 				if args[0] != host.ProtectOn && args[0] != host.ProtectOff {
-					return fmt.Errorf("глобально — dlehost protect on|off|reset|password, для хоста — dlehost protect %s <default|on|off|reset|password>", args[0])
+					return fmt.Errorf("globally: dleplugin hosts protect on|off|reset|password; for a host: dleplugin hosts protect %s <default|on|off|reset|password>", args[0])
 				}
-				return updateConfig("protect", args[0])
+				return updateConfig(rt, "protect", args[0])
 			case 2:
 				if _, err := host.ParseProtect(args[1]); err != nil && args[1] != protectReset {
 					return err
 				}
-				cfg, s, err := env()
+				cfg, s, err := env(rt)
 				if err != nil {
 					return err
 				}
@@ -369,10 +389,10 @@ protect <имя> password --default возвращает хост к общем�
 				if err != nil {
 					return err
 				}
-				fmt.Printf("%s: %s\n", h.Name, protectState(h, cfg.Protect))
+				rt.UI.Infof("%s: %s", h.Name, protectState(h, cfg.Protect))
 				return nil
 			}
-			cfg, s, err := env()
+			cfg, s, err := env(rt)
 			if err != nil {
 				return err
 			}
@@ -384,11 +404,11 @@ protect <имя> password --default возвращает хост к общем�
 			if err != nil {
 				return err
 			}
-			fmt.Println("Глобальный пароль:", passwordPresence(globalPassword))
-			fmt.Println("Глобально:", config.Keys["protect"].Get(cfg))
-			fmt.Println("Срок сессии:", config.Keys["protect_session_ttl"].Get(cfg))
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ХОСТ\tРЕЖИМ\tВХОД\tСВОЙ ПАРОЛЬ")
+			rt.UI.Info("Global password: " + passwordPresence(globalPassword))
+			rt.UI.Info("Global: " + config.Keys["protect"].Get(cfg))
+			rt.UI.Info("Session lifetime: " + config.Keys["protect_session_ttl"].Get(cfg))
+			w := tabwriter.NewWriter(rt.UI.Out, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "HOST\tMODE\tPROTECT\tOWN PASSWORD")
 			for _, r := range rows {
 				if r.Managed {
 					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Name, r.ProtectMode(), onOff(r.Protected(cfg.Protect)), passwordPresence(ownPasswords[r.Name]))
@@ -397,7 +417,7 @@ protect <имя> password --default возвращает хост к общем�
 			return w.Flush()
 		},
 	}
-	cmd.Flags().BoolVar(&inherit, "default", false, "сбросить пароль хоста к глобальному")
+	cmd.Flags().BoolVar(&inherit, "default", false, "reset the host password to the global one")
 	return cmd
 }
 
@@ -407,7 +427,7 @@ func protectSettings(cfg *config.Config) host.ProtectSettings {
 	return host.ProtectSettings{Global: cfg.Protect, SessionTTL: cfg.SessionTTL()}
 }
 
-// protectState — итоговое состояние формы входа; для default с пометкой.
+// protectState is the effective login form state, marked for the default mode.
 func protectState(h host.Host, global bool) string {
 	state := onOff(h.Protected(global))
 	if h.ProtectMode() == host.ProtectDefault {
@@ -423,15 +443,15 @@ func onOff(v bool) string {
 	return "off"
 }
 
-func pathCmd() *cobra.Command {
+func pathCmd(rt *app.Runtime) *cobra.Command {
 	var container bool
 	cmd := &cobra.Command{
-		Use:   "path [имя]",
-		Short: "Путь к каталогу файлов хоста (без имени — к каталогу стека)",
-		Example: "  dlehost path                   # каталог стека\n" +
-			"  dlehost path shop              # каталог хоста на этой машине\n" +
-			"  dlehost path shop --container  # тот же каталог внутри контейнеров\n" +
-			"  cd (dlehost path shop)         # fish; в bash/zsh: cd \"$(dlehost path shop)\"",
+		Use:   "path [NAME]",
+		Short: "Print the host files directory (without NAME, the stack directory)",
+		Example: "  dleplugin hosts path                   # stack directory\n" +
+			"  dleplugin hosts path shop              # host directory on this machine\n" +
+			"  dleplugin hosts path shop --container  # the same directory inside the containers\n" +
+			"  cd \"$(dleplugin hosts path shop)\"",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := stackOnly()
@@ -440,63 +460,56 @@ func pathCmd() *cobra.Command {
 			}
 			if len(args) == 0 {
 				if container {
-					return fmt.Errorf("--container применим только к хосту")
+					return fmt.Errorf("--container only applies to a host")
 				}
-				fmt.Println(s.Dir)
+				rt.UI.Info(s.Dir)
 				return nil
 			}
 			path, err := host.Path(s, args[0], container)
 			if err != nil {
 				return err
 			}
-			fmt.Println(path)
+			rt.UI.Info(path)
 			return nil
 		},
 	}
-	cmd.Flags().BoolVarP(&container, "container", "c", false, "путь внутри контейнеров apache/php ("+stack.ContainerWWWDir+"/<имя>)")
+	cmd.Flags().BoolVarP(&container, "container", "c", false, "path inside the apache/php containers ("+stack.ContainerWWWDir+"/NAME)")
 	return cmd
 }
 
-func portCmd() *cobra.Command {
+func portCmd(rt *app.Runtime) *cobra.Command {
 	return &cobra.Command{
-		Use:   "port [номер]",
-		Short: "Показать или сменить HTTP-порт apache (общий для всех хостов)",
-		Example: "  dlehost port       # текущий порт\n" +
-			"  dlehost port 80    # http://<имя>.localhost/",
+		Use:   "port [NUMBER]",
+		Short: "Show or change the Apache HTTP port (shared by all hosts)",
+		Example: "  dleplugin hosts port       # current port\n" +
+			"  dleplugin hosts port 80    # http://NAME.localhost/",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, s, err := env()
+			_, s, err := env(rt)
 			if err != nil {
 				return err
 			}
 			if len(args) == 0 {
-				fmt.Println(s.HTTPPort())
+				rt.UI.Info(s.HTTPPort())
 				return nil
 			}
 			port, err := strconv.Atoi(args[0])
 			if err != nil {
-				return fmt.Errorf("некорректный порт %q", args[0])
+				return fmt.Errorf("invalid port %q", args[0])
 			}
-			if err := host.SetHTTPPort(s, port, step); err != nil {
+			if err := host.SetHTTPPort(s, port, stepper(rt)); err != nil {
 				return err
 			}
-			fmt.Println("Порт", port, "— пример адреса:", s.HostURL(s.Domain("<имя>")))
+			rt.UI.Successf("Port %d, example address: %s", port, s.HostURL(s.Domain("NAME")))
 			return nil
 		},
 	}
 }
 
-func confirm(question string) bool {
-	fmt.Print(question, " [y/N]: ")
-	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	answer = strings.ToLower(strings.TrimSpace(answer))
-	return answer == "y" || answer == "yes" || answer == "д" || answer == "да"
-}
-
-func versionsCmd() *cobra.Command {
+func versionsCmd(rt *app.Runtime) *cobra.Command {
 	return &cobra.Command{
 		Use:   "versions",
-		Short: "Доступные версии DLE (из dists_dir) и PHP",
+		Short: "Available DLE (from dists_dir) and PHP versions",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
@@ -507,8 +520,8 @@ func versionsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Println("DLE:", strings.Join(markDefault(dists, cfg.DefaultDLE), " "))
-			fmt.Println("PHP:", strings.Join(markDefault(cfg.PHPVersions, cfg.DefaultPHP), " "))
+			rt.UI.Info("DLE: " + strings.Join(markDefault(dists, cfg.DefaultDLE), " "))
+			rt.UI.Info("PHP: " + strings.Join(markDefault(cfg.PHPVersions, cfg.DefaultPHP), " "))
 			return nil
 		},
 	}
@@ -525,16 +538,17 @@ func markDefault(list []string, def string) []string {
 	return out
 }
 
-func configCmd() *cobra.Command {
+func configCmd(rt *app.Runtime) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Управление конфигом CLI",
-		Long:  "Управление конфигом CLI.\n\nКлючи:\n" + configKeysHelp(),
+		Short: "Manage the hosts config",
+		Long:  "Manage the hosts config.\n\nKeys:\n" + configKeysHelp(),
+		Args:  cobra.NoArgs,
 	}
 	cmd.AddCommand(
 		&cobra.Command{
 			Use:   "show",
-			Short: "Показать конфиг",
+			Short: "Show the config",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				cfg, err := config.Load()
@@ -542,16 +556,16 @@ func configCmd() *cobra.Command {
 					return err
 				}
 				path, _ := config.Path()
-				fmt.Println("#", path)
+				rt.UI.Info("# " + path)
 				for _, k := range config.KeyNames() {
-					fmt.Printf("%s: %s\n", k, config.Keys[k].Get(cfg))
+					rt.UI.Infof("%s: %s", k, config.Keys[k].Get(cfg))
 				}
 				return nil
 			},
 		},
 		&cobra.Command{
-			Use:   "get <ключ>",
-			Short: "Значение ключа",
+			Use:   "get KEY",
+			Short: "Print a key value",
 			Args:  cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				key, err := config.Lookup(args[0])
@@ -562,36 +576,36 @@ func configCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				fmt.Println(key.Get(cfg))
+				rt.UI.Info(key.Get(cfg))
 				return nil
 			},
 		},
 		&cobra.Command{
-			Use:   "set <ключ> <значение>",
-			Short: "Установить значение ключа",
+			Use:   "set KEY VALUE",
+			Short: "Set a key value",
 			Args:  cobra.ExactArgs(2),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return updateConfig(args[0], args[1])
+				return updateConfig(rt, args[0], args[1])
 			},
 		},
 		&cobra.Command{
-			Use:   "unset <ключ>",
-			Short: "Сбросить ключ",
+			Use:   "unset KEY",
+			Short: "Reset a key",
 			Args:  cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return updateConfig(args[0], "")
+				return updateConfig(rt, args[0], "")
 			},
 		},
 		&cobra.Command{
 			Use:   "path",
-			Short: "Путь к файлу конфига",
+			Short: "Print the config file path",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				path, err := config.Path()
 				if err != nil {
 					return err
 				}
-				fmt.Println(path)
+				rt.UI.Info(path)
 				return nil
 			},
 		},
@@ -602,12 +616,12 @@ func configCmd() *cobra.Command {
 func configKeysHelp() string {
 	var b strings.Builder
 	for _, k := range config.KeyNames() {
-		fmt.Fprintf(&b, "  %-12s %s\n", k, config.Keys[k].Help)
+		fmt.Fprintf(&b, "  %-20s %s\n", k, config.Keys[k].Help)
 	}
 	return b.String()
 }
 
-func updateConfig(name, value string) error {
+func updateConfig(rt *app.Runtime, name, value string) error {
 	key, err := config.Lookup(name)
 	if err != nil {
 		return err
@@ -621,7 +635,7 @@ func updateConfig(name, value string) error {
 		return err
 	}
 	if name == "protect" || name == "protect_session_ttl" {
-		// Сначала vhost'ы хостов, затем конфиг; при ошибке — откат.
+		// Host vhosts first, then the config; rolled back on error.
 		s, err := openStack(cfg)
 		if err != nil {
 			return err
@@ -632,20 +646,20 @@ func updateConfig(name, value string) error {
 				return err
 			}
 			if !set {
-				return fmt.Errorf("не задан глобальный пароль: выполните dlehost protect password")
+				return fmt.Errorf("no global password: run dleplugin hosts protect password")
 			}
 		}
-		if err := host.ApplyProtect(s, protectSettings(cfg), prev, func() error { return config.Save(cfg) }, step); err != nil {
+		if err := host.ApplyProtect(s, protectSettings(cfg), prev, func() error { return config.Save(cfg) }, stepper(rt)); err != nil {
 			return err
 		}
 	} else if err := config.Save(cfg); err != nil {
 		return err
 	}
-	fmt.Printf("%s: %s\n", name, key.Get(cfg))
+	rt.UI.Infof("%s: %s", name, key.Get(cfg))
 	return nil
 }
 
-// credentialValue: явный флаг → переменная окружения → значение флага по умолчанию.
+// credentialValue: explicit flag, then the environment variable, then the flag default.
 func credentialValue(cmd *cobra.Command, flag, value, variable string) string {
 	if cmd.Flags().Changed(flag) {
 		return value
@@ -658,23 +672,24 @@ func credentialValue(cmd *cobra.Command, flag, value, variable string) string {
 
 func passwordPresence(set bool) string {
 	if set {
-		return "задан"
+		return "set"
 	}
-	return "не задан"
+	return "not set"
 }
 
-// Пароль никогда не принимается аргументом команды или флагом.
+// readProtectPassword reads the password from the terminal or stdin; it is
+// never accepted as an argument or flag.
 func readProtectPassword(in io.Reader, out io.Writer) ([]byte, error) {
 	var password []byte
 	if f, ok := in.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
-		fmt.Fprint(out, "Пароль protect: ")
+		fmt.Fprint(out, "Protect password: ")
 		var err error
 		password, err = term.ReadPassword(int(f.Fd()))
 		fmt.Fprintln(out)
 		if err != nil {
 			return nil, err
 		}
-		fmt.Fprint(out, "Повторите пароль: ")
+		fmt.Fprint(out, "Repeat password: ")
 		confirm, err := term.ReadPassword(int(f.Fd()))
 		fmt.Fprintln(out)
 		defer clear(confirm)
@@ -684,10 +699,10 @@ func readProtectPassword(in io.Reader, out io.Writer) ([]byte, error) {
 		}
 		if !bytes.Equal(password, confirm) {
 			clear(password)
-			return nil, fmt.Errorf("пароли не совпадают")
+			return nil, fmt.Errorf("passwords do not match")
 		}
 	} else {
-		// Лимит чтения исключает неограниченное выделение памяти; пробелы сохраняются.
+		// The read limit prevents unbounded allocation; spaces are kept.
 		data, err := io.ReadAll(io.LimitReader(in, 75))
 		if err != nil {
 			return nil, err
@@ -696,7 +711,7 @@ func readProtectPassword(in io.Reader, out io.Writer) ([]byte, error) {
 	}
 	if len(password) == 0 || len(password) > 72 || bytes.ContainsAny(password, "\r\n\x00") {
 		clear(password)
-		return nil, fmt.Errorf("пароль должен быть одной строкой от 1 до 72 байт без NUL")
+		return nil, fmt.Errorf("the password must be a single line of 1 to 72 bytes without NUL")
 	}
 	return password, nil
 }

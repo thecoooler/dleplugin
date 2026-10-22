@@ -105,7 +105,7 @@ func TestRoutingConfigRoundTrip(t *testing.T) {
 func TestProtectKey(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
 	t.Setenv("DLEHOST_CONFIG", path)
-	// Конфиг без ключа protect — форма выключена.
+	// A config without the protect key keeps the form off.
 	if err := os.WriteFile(path, []byte("base_domain: dle.icooler.opik.net\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestProtectKey(t *testing.T) {
 func TestProtectSessionTTL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
 	t.Setenv("DLEHOST_CONFIG", path)
-	// Старый конфиг без ключа — без серверного истечения.
+	// An old config without the key has no server-side expiry.
 	if err := os.WriteFile(path, []byte("protect: true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

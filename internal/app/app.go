@@ -31,6 +31,7 @@ const (
 	GroupProject = "project"
 	GroupCheck   = "check"
 	GroupRelease = "release"
+	GroupHosts   = "hosts"
 	GroupAgents  = "agents"
 )
 
@@ -38,6 +39,7 @@ var groups = []*cobra.Group{
 	{ID: GroupProject, Title: "Plugin project:"},
 	{ID: GroupCheck, Title: "Checks:"},
 	{ID: GroupRelease, Title: "Build and deploy:"},
+	{ID: GroupHosts, Title: "DLE hosts:"},
 	{ID: GroupAgents, Title: "AI agents:"},
 }
 

@@ -15,7 +15,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Хранилище не связано с конфигом DLE и монтируется в контейнеры только для чтения.
+// legacyGateMarker marks vhosts written by early dlehost versions, whose form
+// logged in with DLE administrator accounts; it is kept verbatim to detect them.
+const legacyGateMarker = "Вход по логину и паролю администратора DLE"
+
+// The store is unrelated to the DLE config and is mounted into the containers read-only.
 type protectPasswords struct {
 	Global string            `json:"global,omitempty"`
 	Hosts  map[string]string `json:"hosts"`
@@ -35,18 +39,18 @@ func loadPasswords(s *stack.Stack) (protectPasswords, error) {
 		return p, err
 	}
 	if err := json.Unmarshal(data, &p); err != nil {
-		return p, fmt.Errorf("не удалось прочитать хранилище паролей protect")
+		return p, fmt.Errorf("could not read the protect password store")
 	}
 	if p.Hosts == nil {
 		p.Hosts = map[string]string{}
 	}
 	for name, hash := range p.Hosts {
 		if !hostNameRe.MatchString(name) || !validProtectHash(hash) {
-			return p, fmt.Errorf("некорректный хеш protect хоста %s", name)
+			return p, fmt.Errorf("invalid protect hash of host %s", name)
 		}
 	}
 	if p.Global != "" && !validProtectHash(p.Global) {
-		return p, fmt.Errorf("некорректный глобальный хеш protect")
+		return p, fmt.Errorf("invalid global protect hash")
 	}
 	return p, nil
 }
@@ -82,7 +86,7 @@ func savePasswords(s *stack.Stack, p protectPasswords) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	// Переименование внутри смонтированного каталога видно уже работающему PHP.
+	// A rename inside the mounted directory is visible to the running PHP.
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".passwords-")
 	if err != nil {
 		return err
@@ -102,7 +106,7 @@ func savePasswords(s *stack.Stack, p protectPasswords) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-// PasswordStatus возвращает только наличие паролей, без самих хешей.
+// PasswordStatus returns only whether passwords are set, without the hashes.
 func PasswordStatus(s *stack.Stack) (bool, map[string]bool, error) {
 	p, err := loadPasswords(s)
 	own := map[string]bool{}
@@ -112,8 +116,8 @@ func PasswordStatus(s *stack.Stack) (bool, map[string]bool, error) {
 	return p.Global != "", own, err
 }
 
-// SetPassword задаёт пароль (name пустое — глобальный), либо возвращает
-// хост к глобальному паролю (inherit). Открытый пароль существует только в памяти.
+// SetPassword sets a password (empty name: the global one) or returns the host
+// to the global password (inherit). The plain password exists only in memory.
 func SetPassword(s *stack.Stack, name string, password []byte, inherit bool, settings ProtectSettings, log func(string)) error {
 	hosts, err := loadRegistry(s)
 	if err != nil {
@@ -121,10 +125,10 @@ func SetPassword(s *stack.Stack, name string, password []byte, inherit bool, set
 	}
 	if name != "" {
 		if _, ok := hosts[name]; !ok {
-			return fmt.Errorf("хост %s не найден среди созданных через dlehost", name)
+			return fmt.Errorf("host %s is not among the hosts created by hosts add", name)
 		}
 	} else if inherit {
-		return fmt.Errorf("--default допустим только для пароля хоста")
+		return fmt.Errorf("--default is only valid for a host password")
 	}
 	p, err := loadPasswords(s)
 	if err != nil {
@@ -138,11 +142,11 @@ func SetPassword(s *stack.Stack, name string, password []byte, inherit bool, set
 		delete(p.Hosts, name)
 	} else {
 		if len(password) == 0 || len(password) > 72 {
-			return fmt.Errorf("пароль должен содержать от 1 до 72 байт")
+			return fmt.Errorf("the password must be 1 to 72 bytes")
 		}
 		hash, err := bcrypt.GenerateFromPassword(password, bcrypt.DefaultCost)
 		if err != nil {
-			return fmt.Errorf("не удалось создать хеш пароля: %w", err)
+			return fmt.Errorf("could not hash the password: %w", err)
 		}
 		if name == "" {
 			p.Global = string(hash)
@@ -150,21 +154,21 @@ func SetPassword(s *stack.Stack, name string, password []byte, inherit bool, set
 			p.Hosts[name] = string(hash)
 		}
 	}
-	// Проверяем все затронутые хосты до записи: сброс не оставит закрытый хост без пароля.
+	// Check all affected hosts before writing: a reset must not leave a closed host without a password.
 	for _, h := range hosts {
 		if (name == "" || h.Name == name) && h.Protected(settings.Global) && p.effective(h.Name) == "" {
 			return missingPassword(h.Name)
 		}
 	}
-	// При первом обновлении нужно подключить новый каталог только для чтения.
-	// Пароль можно задать до up; старые сессии отзываются сразу.
+	// The first update has to mount the new directory read-only.
+	// The password can be set before up; old sessions are revoked right away.
 	legacy := false
 	for _, h := range hosts {
 		data, err := os.ReadFile(vhostPath(s, h.Name))
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		if strings.Contains(string(data), "Вход по логину и паролю администратора DLE") {
+		if strings.Contains(string(data), legacyGateMarker) {
 			legacy = true
 		}
 	}
@@ -175,34 +179,34 @@ func SetPassword(s *stack.Stack, name string, password []byte, inherit bool, set
 		if err := ResetSessions(s, "", log); err != nil {
 			return err
 		}
-		log("пароль сохранён; для перехода со старой формы выполните dlehost up")
+		log("password saved; run dleplugin hosts up to move from the old form")
 		return nil
 	}
 	err = ApplyProtect(s, settings, settings, func() error { return nil }, log)
 	if err != nil {
 		if rerr := savePasswords(s, old); rerr != nil {
-			return fmt.Errorf("%w; вернуть прежние хеши не удалось: %v", err, rerr)
+			return fmt.Errorf("%w; restoring the previous hashes failed: %v", err, rerr)
 		}
 		return err
 	}
-	// Пространство файлов сессий уже изменено в vhost; удаляем старые файлы.
+	// The session file namespace already changed in the vhost; remove the old files.
 	for _, h := range hosts {
 		if old.effective(h.Name) != p.effective(h.Name) {
 			if err := clearSessions(s, h.Name, h.Protected(settings.Global)); err != nil {
-				return fmt.Errorf("пароль изменён, но удалить сессии %s не удалось: %w", h.Name, err)
+				return fmt.Errorf("password changed, but removing the sessions of %s failed: %w", h.Name, err)
 			}
 		}
 	}
-	log("пароль protect сохранён")
+	log("protect password saved")
 	return nil
 }
 
 func missingPassword(name string) error {
-	return fmt.Errorf("для закрытого хоста %s не задан пароль: выполните dlehost protect password или dlehost protect %s password", name, name)
+	return fmt.Errorf("closed host %s has no password: run dleplugin hosts protect password or dleplugin hosts protect %s password", name, name)
 }
 
-// CheckProtectPasswords проверяет настройки перед запуском стека. Сессии старой
-// формы DLE отзываются даже при незавершённой миграции; сайты остаются закрытыми.
+// CheckProtectPasswords checks the settings before the stack starts. Sessions of
+// the old DLE form are revoked even when the migration is unfinished; sites stay closed.
 func CheckProtectPasswords(s *stack.Stack, settings ProtectSettings) error {
 	hosts, err := loadRegistry(s)
 	if err != nil {
@@ -217,7 +221,7 @@ func CheckProtectPasswords(s *stack.Stack, settings ProtectSettings) error {
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		if strings.Contains(string(data), "Вход по логину и паролю администратора DLE") {
+		if strings.Contains(string(data), legacyGateMarker) {
 			if err := clearSessions(s, h.Name, true); err != nil {
 				return err
 			}

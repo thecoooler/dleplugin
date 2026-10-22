@@ -1,4 +1,4 @@
-// Package config — настройки CLI в ~/.config/dlehost/config.yml.
+// Package hostconfig holds the hosts settings in ~/.config/dlehost/config.yml.
 package hostconfig
 
 import (
@@ -17,8 +17,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config — настройки CLI, хранятся в ~/.config/dlehost/config.yml
-// (путь можно переопределить переменной DLEHOST_CONFIG).
+// Config is the hosts settings, stored in ~/.config/dlehost/config.yml
+// (the path can be overridden with DLEHOST_CONFIG).
 type Config struct {
 	BaseDomain     string   `yaml:"base_domain"`
 	ExternalOrigin string   `yaml:"external_origin"`
@@ -27,23 +27,23 @@ type Config struct {
 	DefaultDLE     string   `yaml:"default_dle"`
 	DefaultPHP     string   `yaml:"default_php"`
 	PHPVersions    []string `yaml:"php_versions"`
-	// Protect — форма входа по отдельному паролю для хостов в режиме default.
+	// Protect enables the password login form for hosts in the default mode.
 	Protect bool `yaml:"protect,omitempty"`
-	// ProtectSessionTTL — срок сессии формы входа; пусто или never — без истечения.
+	// ProtectSessionTTL is the login form session lifetime; empty or never means no expiry.
 	ProtectSessionTTL string `yaml:"protect_session_ttl,omitempty"`
 }
 
-// Key — ключ конфига, доступный через dlehost config.
+// Key is a config key available through dleplugin hosts config.
 type Key struct {
 	Help string
 	Get  func(*Config) string
 	Set  func(*Config, string) error
 }
 
-// Keys — все ключи конфига по имени.
+// Keys holds all config keys by name.
 var Keys = map[string]Key{
 	"base_domain": {
-		Help: "базовый DNS-домен новых хостов (пусто — localhost)",
+		Help: "base DNS domain of new hosts (empty: localhost)",
 		Get:  func(c *Config) string { return c.BaseDomain },
 		Set: func(c *Config, v string) error {
 			if err := validateDomain(v); err != nil {
@@ -54,7 +54,7 @@ var Keys = map[string]Key{
 		},
 	},
 	"external_origin": {
-		Help: "внешний origin базового домена, например https://dle.example.com (без внутреннего HTTP_PORT)",
+		Help: "external origin of the base domain, e.g. https://dle.example.com (without the internal HTTP_PORT)",
 		Get:  func(c *Config) string { return c.ExternalOrigin },
 		Set: func(c *Config, v string) error {
 			if err := validateOrigin(v); err != nil {
@@ -65,7 +65,7 @@ var Keys = map[string]Key{
 		},
 	},
 	"project_dir": {
-		Help: "каталог docker-стека, сайтов и баз (пусто — ~/.local/share/dlehost; DLEHOST_DIR приоритетнее)",
+		Help: "directory of the Docker stack, sites and databases (empty: ~/.local/share/dlehost; DLEHOST_DIR takes precedence)",
 		Get:  func(c *Config) string { return c.ProjectDir },
 		Set: func(c *Config, v string) error {
 			p, err := absPath(v)
@@ -74,7 +74,7 @@ var Keys = map[string]Key{
 		},
 	},
 	"dists_dir": {
-		Help: "каталог с чистыми дистрибутивами DLE (ZIP-архивы с install.php)",
+		Help: "directory with clean DLE distributions (ZIP archives with install.php)",
 		Get:  func(c *Config) string { return c.DistsDir },
 		Set: func(c *Config, v string) error {
 			p, err := absPath(v)
@@ -83,23 +83,23 @@ var Keys = map[string]Key{
 		},
 	},
 	"default_dle": {
-		Help: "версия DLE по умолчанию для add",
+		Help: "default DLE version for add",
 		Get:  func(c *Config) string { return c.DefaultDLE },
 		Set:  func(c *Config, v string) error { c.DefaultDLE = v; return nil },
 	},
 	"default_php": {
-		Help: "PHP для add: auto (по версии DLE) или предпочтение, если оно совместимо с DLE",
+		Help: "PHP for add: auto (by DLE version) or a preference used when compatible with DLE",
 		Get:  func(c *Config) string { return c.DefaultPHP },
 		Set: func(c *Config, v string) error {
 			if v != "" && v != "auto" && !slices.Contains(c.PHPVersions, v) {
-				return fmt.Errorf("версия PHP %s не входит в php_versions (%s)", v, strings.Join(c.PHPVersions, ", "))
+				return fmt.Errorf("PHP version %s is not in php_versions (%s)", v, strings.Join(c.PHPVersions, ", "))
 			}
 			c.DefaultPHP = v
 			return nil
 		},
 	},
 	"protect": {
-		Help: "форма входа по отдельному паролю для хостов в режиме default: on или off (по умолчанию off)",
+		Help: "password login form for hosts in the default mode: on or off (default off)",
 		Get: func(c *Config) string {
 			if c.Protect {
 				return "on"
@@ -113,13 +113,13 @@ var Keys = map[string]Key{
 			case "off", "":
 				c.Protect = false
 			default:
-				return fmt.Errorf("protect: допустимы on или off")
+				return fmt.Errorf("protect: use on or off")
 			}
 			return nil
 		},
 	},
 	"protect_session_ttl": {
-		Help: "срок сессии формы входа: never (по умолчанию, без серверного истечения) или 30d, 12h, 90m",
+		Help: "login form session lifetime: never (default, no server-side expiry) or 30d, 12h, 90m",
 		Get: func(c *Config) string {
 			if c.SessionTTL() == 0 {
 				return "never"
@@ -139,7 +139,7 @@ var Keys = map[string]Key{
 		},
 	},
 	"php_versions": {
-		Help: "доступные версии PHP через запятую (должны быть сервисы phpXY в docker-compose)",
+		Help: "available PHP versions, comma-separated (phpXY services must exist in docker-compose)",
 		Get:  func(c *Config) string { return strings.Join(c.PHPVersions, ",") },
 		Set: func(c *Config, v string) error {
 			var list []string
@@ -154,7 +154,7 @@ var Keys = map[string]Key{
 	},
 }
 
-// KeyNames — имена ключей по алфавиту.
+// KeyNames returns the key names in alphabetical order.
 func KeyNames() []string {
 	names := make([]string, 0, len(Keys))
 	for k := range Keys {
@@ -164,11 +164,11 @@ func KeyNames() []string {
 	return names
 }
 
-// Lookup находит ключ по имени.
+// Lookup finds a key by name.
 func Lookup(name string) (Key, error) {
 	key, ok := Keys[name]
 	if !ok {
-		return key, fmt.Errorf("неизвестный ключ %q, доступны: %s", name, strings.Join(KeyNames(), ", "))
+		return key, fmt.Errorf("unknown key %q, available: %s", name, strings.Join(KeyNames(), ", "))
 	}
 	return key, nil
 }
@@ -180,7 +180,7 @@ func defaultConfig() *Config {
 	}
 }
 
-// Path — путь к файлу конфига.
+// Path returns the config file path.
 func Path() (string, error) {
 	if p := os.Getenv("DLEHOST_CONFIG"); p != "" {
 		return p, nil
@@ -192,7 +192,7 @@ func Path() (string, error) {
 	return filepath.Join(home, ".config", "dlehost", "config.yml"), nil
 }
 
-// Load читает конфиг; если файла нет — значения по умолчанию.
+// Load reads the config; a missing file yields the defaults.
 func Load() (*Config, error) {
 	cfg := defaultConfig()
 	path, err := Path()
@@ -215,7 +215,7 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-// Save записывает конфиг.
+// Save writes the config.
 func Save(cfg *Config) error {
 	path, err := Path()
 	if err != nil {
@@ -252,11 +252,11 @@ func validateDomain(domain string) error {
 		return nil
 	}
 	if len(domain) > 210 {
-		return fmt.Errorf("base_domain слишком длинный (максимум 210 символов)")
+		return fmt.Errorf("base_domain is too long (210 characters at most)")
 	}
 	for _, label := range strings.Split(domain, ".") {
 		if !domainLabel.MatchString(label) {
-			return fmt.Errorf("base_domain: нужен DNS-домен в нижнем регистре без схемы, порта и wildcard")
+			return fmt.Errorf("base_domain: expected a lower-case DNS domain without scheme, port or wildcard")
 		}
 	}
 	return nil
@@ -271,26 +271,26 @@ func validateOrigin(origin string) error {
 		return fmt.Errorf("external_origin: %w", err)
 	}
 	if (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.ContainsAny(origin, "?#") {
-		return fmt.Errorf("external_origin: нужен http(s)://базовый-домен[:порт] без пути, авторизации, query и fragment")
+		return fmt.Errorf("external_origin: expected http(s)://base-domain[:port] without path, credentials, query or fragment")
 	}
 	if err := validateDomain(u.Hostname()); err != nil {
 		return fmt.Errorf("external_origin: %w", err)
 	}
 	if strings.HasSuffix(u.Host, ":") {
-		return fmt.Errorf("external_origin: пустой порт")
+		return fmt.Errorf("external_origin: empty port")
 	}
 	if u.Port() != "" {
 		p, err := strconv.Atoi(u.Port())
 		if err != nil || p < 1 || p > 65535 {
-			return fmt.Errorf("external_origin: некорректный порт")
+			return fmt.Errorf("external_origin: invalid port")
 		}
 	}
 	return nil
 }
 
-// ParseSessionTTL разбирает срок сессии формы входа: "", 0, never или
-// unlimited — без серверного истечения; иначе Nd (дни) или длительность Go
-// (12h, 90m) не меньше минуты и не больше 100 лет.
+// ParseSessionTTL parses the login form session lifetime: "", 0, never or
+// unlimited mean no server-side expiry; otherwise Nd (days) or a Go duration
+// (12h, 90m) from one minute to 100 years.
 func ParseSessionTTL(v string) (time.Duration, error) {
 	switch v {
 	case "", "0", "never", "unlimited":
@@ -310,19 +310,19 @@ func ParseSessionTTL(v string) (time.Duration, error) {
 		ttl, err = time.ParseDuration(v)
 	}
 	if err != nil || ttl < time.Minute || ttl > 36500*24*time.Hour {
-		return 0, fmt.Errorf("protect_session_ttl %q: нужно never или срок от 1m до 36500d, например 30d, 12h, 90m", v)
+		return 0, fmt.Errorf("protect_session_ttl %q: expected never or a lifetime from 1m to 36500d, e.g. 30d, 12h, 90m", v)
 	}
 	return ttl, nil
 }
 
-// SessionTTL — срок сессии формы входа; 0 — без серверного истечения.
-// Значение проверено в Validate.
+// SessionTTL is the login form session lifetime; 0 means no server-side
+// expiry. The value is checked by Validate.
 func (c *Config) SessionTTL() time.Duration {
 	ttl, _ := ParseSessionTTL(c.ProtectSessionTTL)
 	return ttl
 }
 
-// Validate проверяет значения также при ручном редактировании YAML.
+// Validate checks the values, including after manual YAML edits.
 func (c *Config) Validate() error {
 	if err := validateDomain(c.BaseDomain); err != nil {
 		return err
@@ -333,8 +333,8 @@ func (c *Config) Validate() error {
 	return validateOrigin(c.ExternalOrigin)
 }
 
-// ValidateRouting вызывается до любых операций со стеком. Раздельная проверка
-// ключей позволяет последовательно менять пару через config set.
+// ValidateRouting is called before any stack operation. Checking the keys
+// separately lets config set change the pair one key at a time.
 func (c *Config) ValidateRouting() error {
 	if err := c.Validate(); err != nil {
 		return err
@@ -346,7 +346,7 @@ func (c *Config) ValidateRouting() error {
 			domain = "localhost"
 		}
 		if u.Hostname() != domain {
-			return fmt.Errorf("external_origin должен использовать base_domain (%s)", domain)
+			return fmt.Errorf("external_origin must use base_domain (%s)", domain)
 		}
 	}
 	return nil
