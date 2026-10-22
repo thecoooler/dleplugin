@@ -94,7 +94,9 @@ func (r *Runner) Run(ctx context.Context, c Command) (*Result, error) {
 					terminated.Store(true)
 				}
 			})
-			return nil
+			// Keeps exec from reporting ctx.Err() for a process that exits on
+			// its own; Run reports cancellation only after SIGTERM.
+			return os.ErrProcessDone
 		}
 		cmd.WaitDelay = GraceDelay + KillDelay
 	}
@@ -110,13 +112,16 @@ func (r *Runner) Run(ctx context.Context, c Command) (*Result, error) {
 	if cmd.ProcessState != nil {
 		res.ExitCode = cmd.ProcessState.ExitCode()
 	}
+	// A graceful process that exited before SIGTERM reports its own status.
+	if terminated.Load() {
+		return res, fmt.Errorf("run %s: %w", c.String(), ctx.Err())
+	}
 	if err != nil {
 		var ee *exec.ExitError
 		if !errors.As(err, &ee) {
 			return res, fmt.Errorf("run %s: %w", c.String(), err)
 		}
-		// A graceful process that exited before SIGTERM reports its own status.
-		if ctx.Err() != nil && (!c.Graceful || terminated.Load()) {
+		if ctx.Err() != nil && !c.Graceful {
 			return res, fmt.Errorf("run %s: %w", c.String(), ctx.Err())
 		}
 	}

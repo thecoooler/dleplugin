@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -81,31 +83,53 @@ func TestStream(t *testing.T) {
 
 func TestGracefulCancel(t *testing.T) {
 	defer func(grace, kill time.Duration) { GraceDelay, KillDelay = grace, kill }(GraceDelay, KillDelay)
-	GraceDelay, KillDelay = 500*time.Millisecond, time.Second
 	r := NewRunner(Options{})
 	for _, tc := range []struct {
 		name, script string
-		min, max     time.Duration
+		grace, kill  time.Duration
+		code         int  // exit code when the process stops on its own
+		canceled     bool // reported as cancellation
+		min          time.Duration
 	}{
 		// Exits on its own within GraceDelay, as after a terminal Ctrl-C.
-		{"own exit", "sleep 0.1; exit 7", 0, 500 * time.Millisecond},
-		{"terminated", "exec sleep 30", 500 * time.Millisecond, 1400 * time.Millisecond},
-		{"killed", "trap '' TERM; while :; do sleep 0.05; done", 1500 * time.Millisecond, 10 * time.Second},
+		{name: "own exit", script: "sleep 0.2; exit 7", grace: 30 * time.Second, kill: time.Minute, code: 7},
+		{name: "own success", script: "sleep 0.2", grace: 30 * time.Second, kill: time.Minute},
+		{name: "terminated", script: "exec sleep 60", grace: 200 * time.Millisecond, kill: time.Minute, canceled: true},
+		{name: "killed", script: "trap '' TERM; while :; do sleep 0.05; done", grace: 200 * time.Millisecond,
+			kill: 500 * time.Millisecond, canceled: true, min: 700 * time.Millisecond},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			GraceDelay, KillDelay = tc.grace, tc.kill
+			ready := filepath.Join(t.TempDir(), "ready")
 			ctx, cancel := context.WithCancel(context.Background())
-			time.AfterFunc(50*time.Millisecond, cancel)
+			defer cancel()
+			go func() { // cancel once the child runs
+				for {
+					if _, err := os.Stat(ready); err == nil {
+						cancel()
+						return
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+			}()
 			start := time.Now()
-			_, err := r.Run(ctx, Command{Name: "sh", Args: []string{"-c", tc.script}, Graceful: true})
+			_, err := r.Run(ctx, Command{Name: "sh", Args: []string{"-c", `: > "$0"; ` + tc.script, ready}, Graceful: true})
+			d := time.Since(start)
 			var ee *ExitError
-			if tc.name == "own exit" {
-				if !errors.As(err, &ee) || ee.Result.ExitCode != 7 {
+			switch {
+			case tc.canceled:
+				if !errors.Is(err, context.Canceled) {
 					t.Fatalf("err = %v", err)
 				}
-			} else if !errors.Is(err, context.Canceled) {
+			case tc.code != 0:
+				if !errors.As(err, &ee) || ee.Result.ExitCode != tc.code {
+					t.Fatalf("err = %v", err)
+				}
+			case err != nil:
 				t.Fatalf("err = %v", err)
 			}
-			if d := time.Since(start); d < tc.min || d > tc.max {
+			// Not killed before GraceDelay + KillDelay, nor kept running after it.
+			if d < tc.min || d > 20*time.Second {
 				t.Fatalf("took %v", d)
 			}
 		})
