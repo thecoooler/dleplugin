@@ -14,6 +14,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"golang.org/x/term"
 
 	"github.com/thecoooler/dleplugin/internal/app"
@@ -179,23 +180,14 @@ func composeCmd(rt *app.Runtime) *cobra.Command {
 func takeInheritedFlags(cmd *cobra.Command, args []string) []string {
 	flags := cmd.InheritedFlags()
 	for len(args) > 0 {
-		arg := args[0]
-		name, value, hasValue := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
-		f := flags.Lookup(name)
-		if !strings.HasPrefix(arg, "--") {
-			f, hasValue = nil, false
-			if len(arg) == 2 && arg[0] == '-' && arg[1] != '-' {
-				f = flags.ShorthandLookup(arg[1:])
+		sets, ok := inheritedFlagArg(flags, args[0])
+		if !ok {
+			break
+		}
+		for _, set := range sets {
+			if err := cmd.Flags().Set(set[0], set[1]); err != nil {
+				return args
 			}
-		}
-		if f == nil || f.NoOptDefVal == "" {
-			break
-		}
-		if !hasValue {
-			value = f.NoOptDefVal
-		}
-		if err := cmd.Flags().Set(f.Name, value); err != nil {
-			break
 		}
 		args = args[1:]
 	}
@@ -203,6 +195,39 @@ func takeInheritedFlags(cmd *cobra.Command, args []string) []string {
 		pre(cmd, args)
 	}
 	return args
+}
+
+// inheritedFlagArg parses arg as boolean-style flags of flags with pflag
+// syntax (--name, --name=value, -x, -xy, -x=value) and returns name/value
+// pairs; ok is false unless the whole argument consists of such flags.
+func inheritedFlagArg(flags *pflag.FlagSet, arg string) (sets [][2]string, ok bool) {
+	if long, isLong := strings.CutPrefix(arg, "--"); isLong {
+		name, value, hasValue := strings.Cut(long, "=")
+		f := flags.Lookup(name)
+		if name == "" || f == nil || f.NoOptDefVal == "" {
+			return nil, false
+		}
+		if !hasValue {
+			value = f.NoOptDefVal
+		}
+		return [][2]string{{f.Name, value}}, true
+	}
+	shorts, isShort := strings.CutPrefix(arg, "-")
+	if !isShort || shorts == "" {
+		return nil, false
+	}
+	for i := 0; i < len(shorts); i++ {
+		f := flags.ShorthandLookup(shorts[i : i+1])
+		if f == nil || f.NoOptDefVal == "" {
+			return nil, false
+		}
+		value := f.NoOptDefVal
+		if rest := shorts[i+1:]; strings.HasPrefix(rest, "=") {
+			value, i = rest[1:], len(shorts)
+		}
+		sets = append(sets, [2]string{f.Name, value})
+	}
+	return sets, true
 }
 
 func listCmd(rt *app.Runtime) *cobra.Command {

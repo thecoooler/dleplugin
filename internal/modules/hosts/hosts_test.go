@@ -180,6 +180,10 @@ func TestComposePassthrough(t *testing.T) {
 		{[]string{"-v", "hosts", "compose", "ps"}, "ps\n", true},
 		{[]string{"hosts", "compose", "--verbose", "logs", "-f"}, "logs\n-f\n", true},
 		{[]string{"hosts", "compose", "-f", "x.yml", "ps", "-v"}, "-f\nx.yml\nps\n-v\n", false},
+		{[]string{"hosts", "compose", "-vv", "ps"}, "ps\n", true},
+		{[]string{"hosts", "compose", "-v=true", "--verbose=false", "ps"}, "ps\n", false},
+		{[]string{"-v=false", "hosts", "compose", "ps"}, "ps\n", false},
+		{[]string{"hosts", "compose", "-vf", "x.yml", "--", "ps"}, "-vf\nx.yml\n--\nps\n", false},
 	} {
 		e := moduletest.NewEnv(t, "", Module())
 		if code := e.Run(tc.args...); code != 3 {
