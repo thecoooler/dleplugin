@@ -32,6 +32,8 @@ internal/convert/          plugin XML -> dleplugin.yml text
 internal/diff/             XML vs XML diff via convert + system `diff`
 internal/dleadmin/         HTTP client for a DLE admin panel: login, plugin
                            list, plugin upload (dleadmintest: fake server)
+internal/dleinstall/       HTTP client of the standard DLE 11.0+ web
+                           installer (used by test and hosts)
 internal/dockerimg/        tool images built from embedded Dockerfiles
 internal/goldentest/       shared golden fixture update helpers
 internal/modules/initcmd/  the init module: init
@@ -54,7 +56,7 @@ internal/modules/test/internal/dle/
                            symlinks, plugin registry in MySQL, cache clearing
 internal/modules/test/internal/dletest/
                            plugin tests against the DLE trial: download,
-                           automated install (MariaDB in Docker), run site,
+                           install via dleinstall (MariaDB in Docker), run site,
                            bootstrap.php with the xfields shim, Pest command
 internal/modules/check/    the check module: check
 internal/modules/check/internal/check/
@@ -70,8 +72,6 @@ internal/modules/hosts/internal/host/
                            and passwords, HTTP port
 internal/modules/hosts/internal/dist/
                            clean DLE distributions: inspect, resolve, extract
-internal/modules/hosts/internal/installer/
-                           HTTP client of the standard DLE 11.0+ installer
 internal/modules/hosts/internal/hostconfig/
                            hosts config ~/.config/dlehost/config.yml
 internal/modules/skills/   the skills module: skills list/install/uninstall
@@ -158,6 +158,7 @@ section, available through `rt.CoreConfig()`.
 | plugin root lookup from any subdirectory            | `plugin.FindRoot`, `plugin.FromDir`            |
 | manifest, generated XML (check)                     | `plugin.Plugin.Info()`, `build.XML`            |
 | reading plugin XML / zip (check, deploy)            | `dlexml`                                       |
+| running the DLE web installer (test, hosts)         | `dleinstall.Run`                               |
 | running docker/composer/php/mysql CLIs              | `process.Runner`                               |
 | cache directories, shared composer cache           | `paths.CacheDir`, `paths.ComposerCacheDir`     |
 | relative file args (test, static)                   | `plugin.NormalizeFiles`                        |

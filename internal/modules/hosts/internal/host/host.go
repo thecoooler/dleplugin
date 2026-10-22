@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thecoooler/dleplugin/internal/dleinstall"
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/dist"
-	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/installer"
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/stack"
 )
 
@@ -379,7 +379,7 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	err = s.WithInstaller(ctx, staging, phpVersion, func(endpoint string) error {
-		return installer.Run(ctx, installer.Options{URL: endpoint, PublicURL: url, DBHost: dbServiceHost,
+		return dleinstall.Run(ctx, dleinstall.Options{URL: endpoint, PublicURL: url, DBHost: dbServiceHost,
 			DBName: h.Database, DBUser: h.Database, DBPassword: password,
 			Login: opts.Admin.Login, Password: opts.Admin.Password, Email: "admin@example.com",
 			RemoveInstaller: func() error { return os.Remove(filepath.Join(staging, "install.php")) }}, log)

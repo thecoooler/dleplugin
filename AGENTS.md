@@ -5,14 +5,14 @@
 This is a Go module (`github.com/thecoooler/dleplugin`) with a single binary in `cmd/dleplugin`. All
 code is under `internal/`. Shared packages are `app` (runtime, module registration, root command),
 `ui`, `config`, `process`, `paths` (including `Resolve`), `manifest`, `plugin`,
-`build`, `convert`, `diff`, `dlexml`, `dleadmin` (with `dleadmintest`),
+`build`, `convert`, `diff`, `dlexml`, `dleadmin` (with `dleadmintest`), `dleinstall`,
 `dockerimg`, and `goldentest`. Command modules live in
 `internal/modules/<name>/` (`initcmd`, `buildcmd`, `convertcmd`, `diffcmd`, `deploy`,
 `static`, `test`, `check`, `hosts`, `skills`); `initcmd` provides the module and command named `init`.
 `internal/modules/moduletest` holds shared command-test helpers. Module-private
 services live in `internal/modules/<name>/internal/<pkg>`: test owns `dletest`
 and `dle`, deploy owns `deploysites`, static owns `static` (with `assets/`),
-check owns `check`, and hosts owns `stack`, `host`, `dist`, `installer` and
+check owns `check`, and hosts owns `stack`, `host`, `dist` and
 `hostconfig` (with embedded stack files in `stack/files/`). Shared packages must not import module packages.
 Services never import `app`, `ui` or cobra; only command packages talk to the
 terminal. `internal/app/arch_test.go` enforces these import rules for production

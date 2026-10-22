@@ -1,5 +1,5 @@
-// Package installer drives unmodified DLE web installers (11.0 and newer) over HTTP.
-package installer
+// Package dleinstall drives unmodified DLE web installers (11.0 and newer) over HTTP.
+package dleinstall
 
 import (
 	"context"
