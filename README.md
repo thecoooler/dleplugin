@@ -19,6 +19,13 @@ make build      # bin/dleplugin
 make install    # go install into $GOBIN
 ```
 
+The desktop app is a separate binary, built apart from the CLI (see
+[Desktop app](#desktop-app)):
+
+```sh
+make build-gui  # bin/dleplugin-gui
+```
+
 Requires Go 1.27.3+ (including the security fixes in that patch release).
 Builds disable CGO by default; set `CGO_ENABLED=1` explicitly if needed.
 
@@ -324,6 +331,24 @@ dleplugin hosts config set dists_dir ~/dle/dists
 dleplugin hosts add shop --dle 21.0     # http://shop.localhost/
 dleplugin hosts list
 ```
+
+## Desktop app
+
+`dleplugin-gui` is a desktop app over the same commands, with native UI drawn
+by [MyGo](https://github.com/egoist/mygo) (no webview, no JavaScript). It
+keeps a list of plugin project folders and, for each, shows the manifest and
+the built artifacts and runs `build`, `deploy upload`, `deploy sites
+add/edit/remove`, `static`, `test` and `check` with the values of its forms.
+New projects are created as `init` does; global sites have a page of their own.
+Commands run in process with the documented flags, so they behave as in the
+CLI; their output goes to the window's console, where a running command can be
+canceled. Passwords typed in the app go to the commands through stdin, never
+on a command line, and may be saved where the CLI saves them (the OS
+credential store or `credentials.yaml`, per `DLEPLUGIN_CREDENTIAL_STORE`).
+
+The project list and the forms' saved values live in `gui.yaml` next to the
+global config. The CLI binary does not include the GUI toolkit. On Linux the
+app needs GTK 3; it builds without cgo for Linux, macOS and Windows.
 
 ## Development
 

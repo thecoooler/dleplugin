@@ -33,6 +33,7 @@ jobs:
       - run: go mod tidy -diff
       - run: make build VERSION=ci
       - run: bin/dleplugin --help && bin/dleplugin --version
+      - run: make build-gui VERSION=ci
   security:
     name: Go vulnerability scan
     runs-on: ubuntu-24.04
@@ -75,6 +76,11 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go build -trimpath -o /tmp/dleplugin ./cmd/dleplugin
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+      - run: go build -trimpath -o /tmp/dleplugin-gui ./cmd/dleplugin-gui
         env:
           CGO_ENABLED: '0'
           GOOS: ${{ matrix.goos }}

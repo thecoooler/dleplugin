@@ -12,6 +12,8 @@ a fresh site copy and database.
 
 ```text
 cmd/dleplugin/main.go      entry point: builds the module list and runs the app
+cmd/dleplugin-gui/main.go  desktop app entry point: the same module list, run
+                           by the GUI
 internal/app/              Runtime (shared services), Module contract, root
                            command, module registration, error rendering
 internal/ui/               terminal output (✔/✖/⚠), colors, prompts, confirm
@@ -30,6 +32,10 @@ internal/build/            XML generation and dist/ writer (README.html,
 internal/dlexml/           reading DLE plugin XML (file operations, tags)
 internal/convert/          plugin XML -> dleplugin.yml text
 internal/diff/             XML vs XML diff via convert + system `diff`
+internal/deploysites/      deployment site files, scope resolution and saved
+                           passwords (deploy module and GUI)
+internal/gui/              desktop app (MyGo native UI): projects, forms,
+                           console; runs commands through app.Execute
 internal/dleadmin/         HTTP client for a DLE admin panel: login, plugin
                            list, plugin upload (dleadmintest: fake server)
 internal/dleinstall/       HTTP client of the standard DLE 11.0+ web
@@ -44,8 +50,6 @@ internal/modules/diffcmd/  the diff module: diff
 internal/modules/moduletest/
                            shared command-test helpers
 internal/modules/deploy/   the deploy module: deploy sites, deploy upload
-internal/modules/deploy/internal/deploysites/
-                           deployment site files and scope resolution
 internal/modules/static/   the static module: static
 internal/modules/static/internal/static/
                            PHPStan in Docker (embedded Dockerfile and
@@ -93,6 +97,25 @@ errors and data. Only command packages talk to the terminal.
 imports; `_test.go` imports are excluded so service tests may use command-test
 helpers. It treats `app`, `cmd/*`, and direct `internal/modules/<name>` packages
 (including `moduletest`) as command packages; nested module packages are services.
+
+## Desktop app
+
+`cmd/dleplugin-gui` builds a second binary, `dleplugin-gui`, separately from
+the CLI: `cmd/dleplugin` must not depend on `internal/gui` or MyGo, which
+`internal/app/arch_test.go` checks. Only `internal/gui` and
+`cmd/dleplugin-gui` import MyGo.
+
+`internal/gui` is a frontend like the command packages: it may import `app`
+(not cobra or `ui`) and never imports module packages, which its entry point
+hands it. Actions run the CLI's commands in process through `app.Execute`
+with a fresh `Runtime` whose working directory is the project, the arguments
+the CLI documents, non-terminal input (so commands never prompt) and output
+captured into the console; one command runs at a time and can be canceled.
+Passwords go through `--password-stdin`. Reading data the views show (the
+manifest, `dist/`, saved sites) and creating a project use the shared
+services directly (`plugin`, `deploysites`). The view runs on the main
+thread; goroutines post their changes, which the next frame applies. Views
+are tested without a window with MyGo's `ui.Tester`.
 
 ## Modules
 
@@ -169,7 +192,8 @@ section, available through `rt.CoreConfig()`.
 
 The test module's private `dle.Host` connects plugins to a DLE copy;
 `dletest` runs the trial-based tests. Other modules use their own private
-services for deployment sites, PHPStan, and patch checking.
+services for PHPStan and patch checking; deployment sites are the shared
+`deploysites`, which the GUI reads too.
 
 ## Behavior notes
 

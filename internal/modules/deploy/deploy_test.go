@@ -14,11 +14,11 @@ import (
 	"github.com/zalando/go-keyring"
 
 	"github.com/thecoooler/dleplugin/internal/app"
+	"github.com/thecoooler/dleplugin/internal/deploysites"
 	"github.com/thecoooler/dleplugin/internal/dleadmin"
 	"github.com/thecoooler/dleplugin/internal/dleadmin/dleadmintest"
 	"github.com/thecoooler/dleplugin/internal/modules/buildcmd"
 	"github.com/thecoooler/dleplugin/internal/modules/deploy"
-	"github.com/thecoooler/dleplugin/internal/modules/deploy/internal/deploysites"
 )
 
 func TestMain(m *testing.M) {

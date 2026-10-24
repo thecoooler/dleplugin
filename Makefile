@@ -3,10 +3,14 @@ LDFLAGS := -s -w -X github.com/thecoooler/dleplugin/internal/app.Version=$(VERSI
 CGO_ENABLED ?= 0
 export CGO_ENABLED
 
-.PHONY: build test lint pipeline install golden clean
+.PHONY: build build-gui test lint pipeline install install-gui golden clean
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/dleplugin ./cmd/dleplugin
+
+# The desktop app (MyGo native UI) builds separately from the CLI.
+build-gui:
+	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/dleplugin-gui ./cmd/dleplugin-gui
 
 test:
 	go test ./...
@@ -19,6 +23,9 @@ pipeline: lint test
 
 install:
 	go install -trimpath -ldflags "$(LDFLAGS)" ./cmd/dleplugin
+
+install-gui:
+	go install -trimpath -ldflags "$(LDFLAGS)" ./cmd/dleplugin-gui
 
 # Update expectations from the committed inputs, then review the diff.
 golden:

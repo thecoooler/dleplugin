@@ -15,10 +15,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// DefaultPasswordEnv is the environment variable holding the admin password
+// of a site without a password_env of its own.
+const DefaultPasswordEnv = "DLEPLUGIN_PASSWORD"
+
 // keyringService names dleplugin entries in the OS credential store.
 const keyringService = "dleplugin"
 
 func keyringUser(host, login string) string { return login + "@" + host }
+
+// CredentialStoreEnv is the environment variable selecting the credential
+// store mode: StoreAuto (default), StoreKeyring or StoreFile.
+const CredentialStoreEnv = "DLEPLUGIN_CREDENTIAL_STORE"
 
 // CredentialsFilename is the plain-text password file kept next to the global config.
 const CredentialsFilename = "credentials.yaml"

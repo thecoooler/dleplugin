@@ -14,18 +14,18 @@ import (
 
 	"github.com/thecoooler/dleplugin/internal/app"
 	"github.com/thecoooler/dleplugin/internal/build"
+	"github.com/thecoooler/dleplugin/internal/deploysites"
 	"github.com/thecoooler/dleplugin/internal/dleadmin"
 	"github.com/thecoooler/dleplugin/internal/dlexml"
-	"github.com/thecoooler/dleplugin/internal/modules/deploy/internal/deploysites"
 	"github.com/thecoooler/dleplugin/internal/plugin"
 )
 
 // PasswordEnv is the environment variable holding the admin password.
-const PasswordEnv = "DLEPLUGIN_PASSWORD"
+const PasswordEnv = deploysites.DefaultPasswordEnv
 
 // CredentialStoreEnv selects where saved passwords are kept: auto (default),
 // keyring or file.
-const CredentialStoreEnv = "DLEPLUGIN_CREDENTIAL_STORE"
+const CredentialStoreEnv = deploysites.CredentialStoreEnv
 
 // credentials returns the saved-password store. Its file lives next to the
 // global config.
