@@ -27,6 +27,24 @@ Check module:
 
 - `dleplugin check`
 
+Hosts module (root help group: `DLE hosts`; see [DLE hosts](hosts.md)):
+
+- `dleplugin hosts up/down`
+- `dleplugin hosts compose [ARGS...]`
+- `dleplugin hosts list/add/remove/path/port/versions`
+- `dleplugin hosts protect`
+- `dleplugin hosts config show/get/set/unset/path`
+
+AI agents module (root help group: `AI agents`):
+
+- `dleplugin skills list`
+- `dleplugin skills install --agent codex|claude [--global] [--force]`
+- `dleplugin skills uninstall --agent codex|claude [--global]`
+
+Both skills are always installed together, offline, into the current directory's
+agent skills folder or the user's home with `--global`. No manifest or CLI config
+is required. See [agent skills](agent-skills.md) for conflict and removal rules.
+
 ## Validation Commands
 
 ```bash
@@ -50,6 +68,10 @@ dleplugin deploy sites add --help
 dleplugin static --help
 dleplugin test --help
 dleplugin check --help
+dleplugin skills --help
+dleplugin skills list --help
+dleplugin skills install --help
+dleplugin skills uninstall --help
 ```
 
 ## Golden fixtures

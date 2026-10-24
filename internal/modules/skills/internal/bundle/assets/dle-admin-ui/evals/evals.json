@@ -1,0 +1,89 @@
+{
+  "skill_name": "dle-admin-ui",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Добавь в существующий модуль engine/inc/catalog.php форму настроек enabled и mode в стиле штатной админки DLE. dleplugin.yml в проекте нет.",
+      "expected_output": "Uses the existing classic module shell without introducing a manifest or DLEPlugin dependency. Uses native panel/settings rows, switch, uniform select, styled save button, escaped output and a server-verified user_hash.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "В PHP view DLEPlugin сделай форму настроек с двумя вкладками: общее и уведомления. Все поля должны сохраняться одной кнопкой.",
+      "expected_output": "Uses Bootstrap 3 nav-tabs-solid and matching tab-pane ids with one active tab. One form wraps both panes, uses data-toggle without custom switching JS, includes escaped user_hash and native buttons, and avoids duplicate echoheader/echofooter.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Добавь в админскую форму DLE одиночный выбор режима и множественный выбор категорий. После AJAX-загрузки обнови варианты обоих списков.",
+      "expected_output": "Uses uniform/Selectpicker for the single select and selectpicker refresh after updates. Uses multiple, array field name and a Chosen hook with explicit initialization for categories, then chosen:updated; does not use uniform or form-control on the multiple select.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "В существующей таблице админки DLE добавь модалку редактирования и действие удаления с подтверждением.",
+      "expected_output": "Uses native table/actions and Bootstrap 3 modal structure with matching unique trigger/id. A single form wraps modal header/body/footer with user_hash; cancel precedes primary save. Deletion uses DLEconfirmDelete and server token validation, with no extra CSS/JS framework.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Исправь кнопки во view DLEPlugin: AdminHTML::button с bg-teal даёт два цвета. Добавь кнопку отмены и крестик закрытия модалки.",
+      "expected_output": "Recognizes appended bg-slate-400 default and uses raw markup or base Core HTML for exactly one background plus btn-sm and btn-raised. Cancel uses bg-grey-400; the native close dismiss control remains close rather than becoming an action button.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "В классическом engine/inc/myplugin.php сделай главную админки каталогом разделов Настройки, Реакции, Статистика. Внутри должны открываться форма, CRUD и отчёт. Названия могут содержать кавычки и HTML.",
+      "expected_output": "Home without section renders only panel panel-default / panel-heading / list-bordered / row box-section / col-sm-6 media-list media-list-linked / media-link / media-left / media-body, with img-lg section_icon and public/adminpanel/images/default_icon.png. Three titled/described links use section=settings|reactions|stats, laid out two then one with balanced rows. Escapes dynamic text, href and nonempty alt, uses decorative empty alt, allowlists section dispatch and fixed view paths, provides back links, keeps existing raw DLE shell/access checks and puts forms/CRUD/statistics only inside sections. No tabs replacing the directory or extra CSS framework.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "В существующем DLEPlugin-проекте добавь каталог трёх самостоятельных разделов на главной. В настройках нужны две вкладки с общей кнопкой сохранения. Сохрани framework routing.",
+      "expected_output": "Loads the section-directory reference. Root controller returns only directory view via AdminResponse; framework supplies shell. Registers separate home/settings/reactions/stats routes in executed bootstrap, builds all links and back URLs via admin->url(), preserves endpoint routing rather than assuming section dispatch. Native media directory has two entries then one, escaped labels/descriptions/URLs/alt. Tabs and a single CSRF-protected form are inside settings only, CRUD and statistics in their own sections; no extra CSS/JS framework.",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "В engine/inc/templatevars.php вынеси добавление и редактирование переменной из списка на отдельные страницы. Сохрани штатную навигацию DLE; имя переменной может содержать кавычки и HTML.",
+      "expected_output": "Uses echoheader second-argument arrays for list/add/edit, with linked parent list and final empty-key active label. Does not substitute a Back to list link or add Home manually. Escapes the dynamic edit label and URL attributes, preserves one header/footer, and checks list → add/edit → parent navigation.",
+      "files": []
+    },
+    {
+      "id": 9,
+      "prompt": "В существующем DLEPlugin admin UI вынеси создание и редактирование записей на отдельные маршруты. Сейчас контроллер возвращает AdminResponse.",
+      "expected_output": "Inspects the installed AdminResponse/Admin breadcrumb contract before choosing its format. Uses admin->url for parent links, supplies parent/current native breadcrumbs with appropriate escaping, and leaves header/footer to the wrapper. Checks active current item and single automatic Home; does not add raw echoheader to views.",
+      "files": []
+    },
+    {
+      "id": 10,
+      "prompt": "После AJAX-загрузки формы настройки DLE новый переключатель и одиночный select остаются обычными HTML-контролами. Исправь и проверь повторную загрузку.",
+      "expected_output": "Initializes new switches with Switchery and new uniform selects with selectpicker, scoped to inserted elements without initializing existing instances twice. Distinguishes initialization from refreshing options on existing widgets.",
+      "files": []
+    },
+    {
+      "id": 11,
+      "prompt": "В классическом engine/inc/catalog.php удаление записи сделано ссылкой с DLEconfirmDelete. Этого достаточно? Покажи безопасный серверный вариант.",
+      "expected_output": "No. DLEconfirmDelete is only a client-side confirmation. The mutating link includes an escaped user_hash and the handler validates it from $_GET against $dle_login_hash, rejecting missing, non-string, empty or mismatched values before deletion. No extra JS framework or hand-built confirm modal.",
+      "files": []
+    },
+    {
+      "id": 12,
+      "prompt": "В DLEPlugin view формы настроек две вкладки и одна кнопка сохранения. Куда добавить user_hash и как проверить его на сервере?",
+      "expected_output": "One form wraps both tab panes and all inputs, with an escaped hidden user_hash. The view uses global $dle_login_hash or $GLOBALS because included views do not inherit globals. The controller validates the token with hash_equals before saving; Form::isSubmitAndValid and a confirmation dialog do not replace that check. AdminResponse supplies the shell.",
+      "files": []
+    },
+    {
+      "id": 13,
+      "prompt": "В classic-модуле есть helper-функции makeCheckBox и makeDropDown. name и option-значения приходят из запроса, а $optional/$attrs формируются кодом плагина. Что экранировать?",
+      "expected_output": "Escapes name, option value, label and selected comparisons as needed; $optional and $attrs are trusted HTML fragments and must never receive request-derived text. If attributes must be dynamic, build them from escaped values. Uses native switch/uniform classes and initializes dynamically inserted controls.",
+      "files": []
+    },
+    {
+      "id": 14,
+      "prompt": "В DLEPlugin используем Admin\\ModelController и штатные @form/@model/main без изменений. Сохранение и удаление работают. Можно ли оставить как есть?",
+      "expected_output": "No. Stock save/delete do not verify user_hash, stock form and model views do not add the token, and getValue()/model list output can emit raw strings or labels. Adds escaped tokens to custom forms and mutating links, validates before persistence, uses custom escaped list views, keeps trusted icon markup separate, and allowlists sort fields.",
+      "files": []
+    }
+  ]
+}

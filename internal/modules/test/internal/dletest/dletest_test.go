@@ -189,12 +189,14 @@ func (f *fakeInstaller) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"status": "ok", "offset": off, "total": 10})
 	}
 	switch action {
-	case "eula", "userconfig":
-		fmt.Fprint(w, "<p>ok</p>")
+	case "eula":
+		fmt.Fprint(w, `<input type="checkbox" id="check-eula">`)
+	case "userconfig":
+		fmt.Fprint(w, `<input name="reg_username">`)
 	case "function_check":
 		http.Redirect(w, r, "/install.php?action=dbconfig", http.StatusFound)
 	case "dbconfig":
-		fmt.Fprint(w, `<input name="dbhost">`)
+		fmt.Fprint(w, `<input name="dbhost"><input name="dbprefix">`)
 	case "checkdb":
 		f.checkdb = r.PostForm
 		if f.failDB != "" {
@@ -203,7 +205,7 @@ func (f *fakeInstaller) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprint(w, `{"status":"ok"}`)
 	case "doinstall":
-		fmt.Fprint(w, `<script>$.post("?action=installtemplate")</script>`)
+		fmt.Fprint(w, `<script>$.post("?action=installtemplate"); $.post("?action=docreatedb"); $.post("?action=dosaveconfig")</script>`)
 	case "installtemplate", "docreatedb":
 		batch()
 	case "dosaveconfig":
@@ -217,7 +219,8 @@ func TestInstall(t *testing.T) {
 	f := &fakeInstaller{}
 	srv := httptest.NewServer(f)
 	defer srv.Close()
-	if err := Install(context.Background(), srv.URL+"/install.php"); err != nil {
+	site := t.TempDir()
+	if err := Install(context.Background(), srv.URL+"/", site); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"start", "eula", "function_check", "dbconfig", "checkdb", "userconfig", "doinstall",
@@ -232,15 +235,8 @@ func TestInstall(t *testing.T) {
 	f = &fakeInstaller{failDB: "Нет доступа к базе"}
 	srv2 := httptest.NewServer(f)
 	defer srv2.Close()
-	if err := Install(context.Background(), srv2.URL+"/install.php"); err == nil || !strings.Contains(err.Error(), "?action=checkdb: Нет доступа к базе") {
+	if err := Install(context.Background(), srv2.URL+"/", site); err == nil || !strings.Contains(err.Error(), "installer checkdb: ") || !strings.Contains(err.Error(), "Нет доступа к базе") {
 		t.Errorf("err = %v", err)
-	}
-}
-
-func TestPageText(t *testing.T) {
-	got := pageText("<html><style>p{}</style><script>var x;</script><h1>Ошибка</h1>\n<p>a &amp; b</p></html>")
-	if got != "Ошибка a & b" {
-		t.Errorf("got %q", got)
 	}
 }
 

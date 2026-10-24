@@ -321,7 +321,7 @@ func installBase(ctx context.Context, runner *process.Runner, image, base, site 
 	}); err != nil {
 		return err
 	}
-	if err := Install(ctx, installURL); err != nil {
+	if err := Install(ctx, "http://"+addr+"/", site); err != nil {
 		return err
 	}
 	if err := SetSiteURL(site, SiteURL); err != nil {

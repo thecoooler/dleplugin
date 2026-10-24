@@ -314,11 +314,14 @@ func (a *App) deployUpload(pv *projectView) {
 // savePassword keeps a password that worked in the credential store.
 func (a *App) savePassword(host, login, password string) {
 	a.background(func() {
-		err := savePassword(host, login, password)
+		fallback, err := savePassword(a.configPath, host, login, password)
 		a.post(func() {
 			if err != nil {
 				a.notify(err.Error(), true)
 				return
+			}
+			if fallback != nil {
+				a.notify(fallback.Error()+"; password saved to the credentials file instead", false)
 			}
 			a.refreshSites()
 		})

@@ -172,7 +172,7 @@ type passwordState int
 const (
 	passwordNone        passwordState = iota // nowhere: it must be typed
 	passwordEnv                              // an environment variable
-	passwordStored                           // the OS credential store
+	passwordStored                           // the credential store or file
 	passwordUnavailable                      // the credential store failed
 )
 
@@ -218,6 +218,7 @@ func loadSites(configPath, root string) ([]siteRow, error) {
 	if err != nil {
 		return nil, err
 	}
+	creds, credsErr := credentials(configPath)
 	var rows []siteRow
 	for _, host := range deploysites.Hosts(entries) {
 		e := entries[host]
@@ -229,21 +230,35 @@ func loadSites(configPath, root string) ([]siteRow, error) {
 		if row.env == "" {
 			row.env = deploysites.DefaultPasswordEnv
 		}
-		row.password = sitePassword(host, e.Site.Login, row.env)
+		row.password = sitePassword(creds, credsErr, host, e.Site.Login, row.env)
 		rows = append(rows, row)
 	}
 	return rows, nil
 }
 
-func sitePassword(host, login, env string) passwordState {
+// credentials returns the saved-password store the deploy commands use: its
+// file lives next to the global config and $DLEPLUGIN_CREDENTIAL_STORE picks
+// the mode.
+func credentials(configPath string) (deploysites.Credentials, error) {
+	c, err := deploysites.NewCredentials(filepath.Dir(configPath), os.Getenv(deploysites.CredentialStoreEnv))
+	if err != nil {
+		return c, fmt.Errorf("%s: %w", deploysites.CredentialStoreEnv, err)
+	}
+	return c, nil
+}
+
+func sitePassword(c deploysites.Credentials, credsErr error, host, login, env string) passwordState {
 	if os.Getenv(env) != "" {
 		return passwordEnv
 	}
-	_, ok, err := deploysites.Password(host, login)
+	if credsErr != nil {
+		return passwordUnavailable
+	}
+	_, loc, err := c.Password(host, login)
 	switch {
 	case err != nil:
 		return passwordUnavailable
-	case ok:
+	case loc != "":
 		return passwordStored
 	}
 	return passwordNone

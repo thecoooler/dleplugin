@@ -100,8 +100,15 @@ func extendPath() {
 
 func defaultPasswordEnv() string { return deploysites.DefaultPasswordEnv }
 
-func savePassword(host, login, password string) error {
-	return deploysites.SavePassword(host, login, password)
+// savePassword keeps a password in the credential store of the CLI. A
+// non-nil fallback means the OS store failed and the file was used.
+func savePassword(configPath, host, login, password string) (fallback, err error) {
+	c, err := credentials(configPath)
+	if err != nil {
+		return nil, err
+	}
+	_, fallback, err = c.SavePassword(host, login, password)
+	return fallback, err
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }

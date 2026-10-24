@@ -26,7 +26,7 @@ The desktop app is a separate binary, built apart from the CLI (see
 make build-gui  # bin/dleplugin-gui
 ```
 
-Requires Go 1.27.2+ (including the security fixes in that patch release).
+Requires Go 1.27.3+ (including the security fixes in that patch release).
 Builds disable CGO by default; set `CGO_ENABLED=1` explicitly if needed.
 
 ## Quick start
@@ -34,6 +34,8 @@ Builds disable CGO by default; set `CGO_ENABLED=1` explicitly if needed.
 ```sh
 dleplugin init Demo --slug Demo --name "Demo Plugin" --description "My first plugin" --namespace 'Acme\Demo'
 cd Demo
+# Optional: install both bundled AI skills for this project
+dleplugin skills install --agent codex  # or --agent claude
 mkdir -p src
 printf '<?php echo "Demo";\n' > src/Main.php
 dleplugin build --version 0.1.0
@@ -70,8 +72,32 @@ checks. See [issues](https://github.com/thecoooler/dleplugin/issues) for reports
 | `diff SOURCE1 SOURCE2`          | Compare plugin XML files and projects         |
 | `deploy upload [HOST]`          | Upload the plugin to a DLE site               |
 | `deploy sites`                  | Manage saved deployment sites                 |
+| `hosts ...`                     | Run DLE sites in a local Docker stack         |
+| `skills list/install/uninstall` | Manage bundled Codex / Claude Code skills      |
 
 Global flag: `-v/--verbose`.
+
+### AI agent skills
+
+The binary includes `dleplugin` and its companion `dle-admin-ui`, versioned
+with the CLI. Installation copies both complete directories, including references,
+without network access. Run from the project directory:
+
+```sh
+dleplugin skills list
+dleplugin skills install --agent codex
+dleplugin skills install --agent claude
+dleplugin skills install --agent codex --global
+# Repeat install after upgrading the CLI to update the skills.
+dleplugin skills uninstall --agent codex
+```
+
+Project installs use `.agents/skills/` for Codex and `.claude/skills/` for
+Claude Code; `--global` uses the corresponding directory under your home.
+`init` does not install skills. Existing modified or unmanaged directories require
+`install --force`, which discards their contents. Uninstall refuses modified or
+unmanaged copies and leaves unrelated skills alone. See
+[installation and maintenance details](docs/agent-skills.md).
 
 ### convert
 
@@ -135,15 +161,30 @@ sites:
 ```
 
 `url` and `admin_path` are optional when editing YAML directly: the host key
-provides the URL, HTTPS is assumed (`*.localhost` uses HTTP), and `admin.php`
-is the default script. Saved files have permissions `0600`. Passwords are
+provides the URL, HTTPS is assumed (`localhost` and `*.localhost` use HTTP),
+and `admin.php` is the default script. Saved files have permissions `0600`. Passwords are
 never written to the file: `--password-env` stores only an environment variable
 name. With no password variable configured, `DLEPLUGIN_PASSWORD` or a secret
 prompt is used. A password typed or piped during `add`/`edit` is saved in the
 OS credential store (macOS Keychain, Windows Credential Manager, Secret Service
 on Linux) under the service `dleplugin` and the account `LOGIN@HOST`; `remove`
-deletes it. A password from an environment variable is not saved. If the store
-is unavailable, a warning is shown and the password is not remembered.
+deletes it. A password from an environment variable is not saved.
+
+`DLEPLUGIN_CREDENTIAL_STORE` selects where passwords are saved:
+
+| Value            | Behavior                                                       |
+| ---------------- | -------------------------------------------------------------- |
+| `auto` (default) | OS credential store; the credentials file when it is unavailable |
+| `keyring`        | OS credential store only; when unavailable, nothing is saved   |
+| `file`           | credentials file only                                          |
+
+The credentials file is `credentials.yaml` next to the global config
+(`~/.config/dleplugin/credentials.yaml`), keyed by host and login. It holds
+passwords in plain text, protected only by permissions `0600`; dleplugin refuses
+to read it when it is a symlink or other users can access it. In `auto` mode a fallback to the file
+prints a warning; set `DLEPLUGIN_CREDENTIAL_STORE=file` on headless servers
+without a Secret Service to save there directly. `sites show` reports where the
+saved password is.
 
 ```sh
 dleplugin deploy upload                            # choose a saved site or enter a URL
@@ -179,8 +220,8 @@ a login from a saved site satisfies the `--password-stdin` login requirement.
 | `--dry-run`          | log in and look up the plugin, upload nothing            |
 | `--insecure`         | skip TLS certificate verification for this invocation   |
 
-Password precedence: stdin, the selected environment variable, the credential
-store (saved sites only), then a secret prompt. A password typed for a saved
+Password precedence: stdin, the selected environment variable, the saved
+password (credential store or file, saved sites only), then a secret prompt. A password typed for a saved
 site is remembered; a saved password the site rejects is asked for again on a
 terminal and replaced. If a site or flag specifies a variable, an empty value does not fall
 back to `DLEPLUGIN_PASSWORD`; without a terminal it is an error. There is no
@@ -276,6 +317,21 @@ DLE 17.0 (/home/me/dists/17.0): ERROR
 
 The exit code is 1 when a patch does not apply to some directory.
 
+### hosts
+
+Runs DLE sites in a local Docker stack (Apache, PHP 8.5/7.4, MariaDB) built
+from files embedded in the binary: creates sites from clean DLE distributions
+through the standard installer, puts an optional password form in front of
+them, and changes the shared HTTP port. It replaces the standalone `dlehost`
+CLI and keeps its config and data. See [DLE hosts](docs/hosts.md).
+
+```sh
+dleplugin hosts up
+dleplugin hosts config set dists_dir ~/dle/dists
+dleplugin hosts add shop --dle 21.0     # http://shop.localhost/
+dleplugin hosts list
+```
+
 ## Desktop app
 
 `dleplugin-gui` is a desktop app over the same commands, with native UI drawn
@@ -287,7 +343,8 @@ New projects are created as `init` does; global sites have a page of their own.
 Commands run in process with the documented flags, so they behave as in the
 CLI; their output goes to the window's console, where a running command can be
 canceled. Passwords typed in the app go to the commands through stdin, never
-on a command line, and may be remembered in the OS credential store.
+on a command line, and may be saved where the CLI saves them (the OS
+credential store or `credentials.yaml`, per `DLEPLUGIN_CREDENTIAL_STORE`).
 
 The project list and the forms' saved values live in `gui.yaml` next to the
 global config. The CLI binary does not include the GUI toolkit. On Linux the

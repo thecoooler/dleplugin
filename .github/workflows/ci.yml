@@ -47,7 +47,18 @@ jobs:
           go-version-file: go.mod
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       - run: make build VERSION=ci
-      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -mode=binary bin/dleplugin
+      # GO-2026-5932 flags every x/crypto/openpgp package without symbols, so
+      # binary mode reports it for any binary linking x/crypto (we use bcrypt
+      # only). The source scan above still fails if openpgp is ever imported.
+      - name: govulncheck binary
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -mode=binary -format json bin/dleplugin > govulncheck.json
+          jq -r 'select(.finding) | .finding.osv | select(. != "GO-2026-5932")' govulncheck.json | sort -u > findings.txt
+          if [ -s findings.txt ]; then
+            go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -mode=binary bin/dleplugin || true
+            echo "::error::vulnerabilities found: $(tr '\n' ' ' < findings.txt)"
+            exit 1
+          fi
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-24.04

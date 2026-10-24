@@ -6,16 +6,17 @@ This is a Go module (`github.com/thecoooler/dleplugin`) with the CLI binary in `
 and the desktop app in `cmd/dleplugin-gui`, built separately. All
 code is under `internal/`. Shared packages are `app` (runtime, module registration, root command),
 `ui`, `config`, `process`, `paths` (including `Resolve`), `manifest`, `plugin`,
-`build`, `convert`, `diff`, `dlexml`, `dleadmin` (with `dleadmintest`),
+`build`, `convert`, `diff`, `dlexml`, `dleadmin` (with `dleadmintest`), `dleinstall`,
 `deploysites`, `dockerimg`, and `goldentest`. `gui` is the desktop app (MyGo
 native UI): a frontend that runs commands through `app.Execute`; only it and
 `cmd/dleplugin-gui` may import MyGo, and the CLI must not link it. Command modules live in
 `internal/modules/<name>/` (`initcmd`, `buildcmd`, `convertcmd`, `diffcmd`, `deploy`,
-`static`, `test`, `check`); `initcmd` provides the module and command named `init`.
+`static`, `test`, `check`, `hosts`, `skills`); `initcmd` provides the module and command named `init`.
 `internal/modules/moduletest` holds shared command-test helpers. Module-private
 services live in `internal/modules/<name>/internal/<pkg>`: test owns `dletest`
 and `dle`, static owns `static` (with `assets/`),
-and check owns `check`. Shared packages must not import module packages.
+check owns `check`, and hosts owns `stack`, `host`, `dist` and
+`hostconfig` (with embedded stack files in `stack/files/`). Shared packages must not import module packages.
 Services never import `app`, `ui` or cobra; only command packages talk to the
 terminal. `internal/app/arch_test.go` enforces these import rules for production
 code. Fixtures are in `testdata/golden/`. Design notes are in `docs/architecture.md`.
@@ -52,7 +53,8 @@ YAML, zip) must match `testdata/golden` byte for byte.
    of top-level commands to an `app.Group*` help group.
 4. Add it to the `modules()` list in `cmd/dleplugin/main.go`, alongside
    `initcmd.Module()`, `buildcmd.Module()`, `convertcmd.Module()`, `diffcmd.Module()`,
-   `deploy.Module()`, `static.Module()`, `test.Module()`, and `check.Module()`.
+   `deploy.Module()`, `static.Module()`, `test.Module()`, `check.Module()`,
+   `hosts.Module()`, and `skills.Module()`.
    The entry point calls `app.Main(modules()...)`; no module must register first.
    Add it to `modules()` in `cmd/dleplugin-gui/main.go` too.
 5. Add tests with `app.NewRuntime` and buffers or the shared helpers in

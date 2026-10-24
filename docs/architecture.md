@@ -38,6 +38,8 @@ internal/gui/              desktop app (MyGo native UI): projects, forms,
                            console; runs commands through app.Execute
 internal/dleadmin/         HTTP client for a DLE admin panel: login, plugin
                            list, plugin upload (dleadmintest: fake server)
+internal/dleinstall/       HTTP client of the standard DLE 11.0+ web
+                           installer (used by test and hosts)
 internal/dockerimg/        tool images built from embedded Dockerfiles
 internal/goldentest/       shared golden fixture update helpers
 internal/modules/initcmd/  the init module: init
@@ -58,12 +60,27 @@ internal/modules/test/internal/dle/
                            symlinks, plugin registry in MySQL, cache clearing
 internal/modules/test/internal/dletest/
                            plugin tests against the DLE trial: download,
-                           automated install (MariaDB in Docker), run site,
+                           install via dleinstall (MariaDB in Docker), run site,
                            bootstrap.php with the xfields shim, Pest command
 internal/modules/check/    the check module: check
 internal/modules/check/internal/check/
                            file patches vs DLE directories: whitespace- and
                            case-insensitive search, missing files, duplicates
+internal/modules/hosts/    the hosts module: hosts up/down/compose/list/add/
+                           remove/protect/path/port/versions/config
+internal/modules/hosts/internal/stack/
+                           Docker stack: embedded files, .env, docker compose,
+                           temporary installer container
+internal/modules/hosts/internal/host/
+                           hosts registry, add/remove, vhosts, protect form
+                           and passwords, HTTP port
+internal/modules/hosts/internal/dist/
+                           clean DLE distributions: inspect, resolve, extract
+internal/modules/hosts/internal/hostconfig/
+                           hosts config ~/.config/dlehost/config.yml
+internal/modules/skills/   the skills module: skills list/install/uninstall
+internal/modules/skills/internal/bundle/
+                           embedded skill trees and managed copy lifecycle
 testdata/golden/           golden fixtures (see testdata/README.md)
 ```
 
@@ -120,7 +137,7 @@ func main() {
 }
 
 func modules() []app.Module {
-	return []app.Module{initcmd.Module(), buildcmd.Module(), convertcmd.Module(), diffcmd.Module(), deploy.Module(), static.Module(), test.Module(), check.Module()}
+	return []app.Module{initcmd.Module(), buildcmd.Module(), convertcmd.Module(), diffcmd.Module(), deploy.Module(), static.Module(), test.Module(), check.Module(), hosts.Module(), skills.Module()}
 }
 ```
 
@@ -134,8 +151,8 @@ Registration rules:
   added); the CLI keeps working;
 - registration results are available via `rt.Modules()` / `rt.ModuleErrors()`;
   module tests must assert that a module registers without errors;
-- top-level commands set `GroupID` to `app.GroupProject`, `app.GroupCheck` or
-  `app.GroupRelease`; the root help lists these groups in that order and the
+- top-level commands set `GroupID` to `app.GroupProject`, `app.GroupCheck`,
+  `app.GroupRelease`, `app.GroupHosts` or `app.GroupAgents`; the root help lists these groups in that order and the
   commands of a group in registration order. Empty groups are omitted;
   commands without a known group appear under "Additional Commands".
 
@@ -164,6 +181,7 @@ section, available through `rt.CoreConfig()`.
 | plugin root lookup from any subdirectory            | `plugin.FindRoot`, `plugin.FromDir`            |
 | manifest, generated XML (check)                     | `plugin.Plugin.Info()`, `build.XML`            |
 | reading plugin XML / zip (check, deploy)            | `dlexml`                                       |
+| running the DLE web installer (test, hosts)         | `dleinstall.Run`                               |
 | running docker/composer/php/mysql CLIs              | `process.Runner`                               |
 | cache directories, shared composer cache           | `paths.CacheDir`, `paths.ComposerCacheDir`     |
 | relative file args (test, static)                   | `plugin.NormalizeFiles`                        |
@@ -185,6 +203,10 @@ services for PHPStan and patch checking; deployment sites are the shared
   `<upgradeurl>` behaves the same from `upgrade_url`/`--upgrade-url`, but only
   an https link validates.
 - Modules are compiled in; there is no runtime discovery.
+- `skills` embeds both agent skills via `go:embed`, using the CLI runtime version.
+  Its private service copies complete sibling directories, records SHA-256 hashes
+  and ownership, and preflights both before updates/removal. See
+  [agent skills](agent-skills.md) for paths, conflict rules and source provenance.
 - `deploy` is a command group: `deploy sites` manages host-keyed connections
   and `deploy upload [HOST]` builds/uploads to one site. Global sites live
   next to the global config in `dleplugin-deploy.yaml`; project sites live
@@ -192,7 +214,9 @@ services for PHPStan and patch checking; deployment sites are the shared
   check the admin login before saving. Passwords are kept out of the file: a
   site may reference an environment variable, and passwords checked by
   `sites add/edit` (or typed for a saved site on upload) go to the OS
-  credential store via go-keyring. TLS is verified unless `--insecure`; the
+  credential store via go-keyring. `DLEPLUGIN_CREDENTIAL_STORE` (`auto`,
+  `keyring`, `file`) lets them fall back to, or go only to, a `0600`
+  `credentials.yaml` next to the global config. TLS is verified unless `--insecure`; the
   AJAX URL is resolved next to the admin script: `engine/ajax/controller.php`,
   or `index.php?controller=ajax` (DLE 19+) when the first answers 403/404.
   Admin requests follow redirects only within their original origin.
@@ -230,7 +254,7 @@ services for PHPStan and patch checking; deployment sites are the shared
   paths must stay within the DLE root. Local writes use `os.Root` to prevent
   symlink traversal outside their destination.
 - Names/descriptions containing SQL special characters are encoded safely.
-- Release builds require patched Go 1.27.2+ and disable CGO by default.
+- Release builds require patched Go 1.27.3+ and disable CGO by default.
   The module path is `github.com/thecoooler/dleplugin`.
 - `make golden` updates generated expectations from committed inputs through
   Go tests; see `testdata/README.md`.

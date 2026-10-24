@@ -252,7 +252,7 @@ func TestSitesAndDeploy(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := deploysites.SavePassword("dev.localhost", "dev", "secret"); err != nil {
+	if _, err := savePassword(e.cfg, "dev.localhost", "dev", "secret"); err != nil {
 		t.Fatal(err)
 	}
 	e.app.selectProject(root)
@@ -293,8 +293,12 @@ func TestSitesAndDeploy(t *testing.T) {
 		t.Fatalf("upload %+v", c)
 	}
 	e.settle()
-	if p, ok, _ := deploysites.Password("shared.example", "admin"); !ok || p != "pw" {
-		t.Fatalf("password not remembered: %q %v", p, ok)
+	creds, err := credentials(e.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, loc, _ := creds.Password("shared.example", "admin"); loc == "" || p != "pw" {
+		t.Fatalf("password not remembered: %q %q", p, loc)
 	}
 	if pv.deploy.password != "" {
 		t.Fatal("the password stays in the form")

@@ -1,0 +1,191 @@
+{
+  "skill_name": "dleplugin",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Create a simple DLE plugin dashboard page for the current plugin. It should add an admin section, route requests through admin.php, and put reusable PHP code in src/.",
+      "expected_output": "Reads slug, namespace, mount and existing source. Packages src/admin.php aliased to engine/inc/<lowercase-slug>.php, sets extras.admin_section true, uses the manifest namespace for classes, and runs relevant CLI checks. Uses the companion dle-admin-ui skill for rendered admin markup while retaining dleplugin manifest/runtime responsibilities.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Add an AJAX endpoint for my DLE plugin that cron can call to refresh cached data. What files and config should change?",
+      "expected_output": "Packages src/ajax.php with alias target engine/ajax/<endpoint>.php, derives controller.php?mod=<endpoint> from the target basename without .php, keeps reusable logic under src/, and verifies with static/build as relevant.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I need a new src/Core/App.php class and install SQL for this dleplugin project. The slug is from dleplugin.yml. Please implement it and check it.",
+      "expected_output": "Resolves the manifest namespace independently of slug; src/Core/App.php uses <namespace>\\Core. mysql.install is a scalar literal block, never a list. Uses CLI static/build checks without installing tools through project Composer.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "In this DLE plugin project, inspect dleplugin.yml and src/. I added a new Domain\\Repository\\CommentRepositoryInterface and Infrastructure\\Repository\\CommentRepository. Update dleplugin.yml so DLEPlugin::make(CommentRepositoryInterface::class) resolves the implementation correctly.",
+      "expected_output": "Explains that the current Go CLI ignores di.bindings. Inspects executed bootstrap and adds DLEPlugin::bind(interface::class, implementation::class, true) before resolution; preserves legacy YAML if another tool consumes it. Does not claim an ignored YAML entry fixes runtime wiring.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Review my dleplugin.yml dependency injection config for a DLE plugin. Tell me whether the repository interfaces and ClockInterface bindings are correct, and point out anything that should not be bound.",
+      "expected_output": "Distinguishes ignored CLI di.bindings metadata from PHP runtime registration. Verifies interface/target classes, executed bind calls, lifetimes and make usage. Does not bind entities/value objects unnecessarily.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "I need to wire a new payment gateway into a dleplugin CLI plugin for DataLife Engine. There is Application\\Payment\\PaymentGatewayInterface and Infrastructure\\Payment\\DlePaymentGateway. Show me the dleplugin.yml di.bindings snippet and explain whether singleton should be true.",
+      "expected_output": "Explains YAML di.bindings is ignored by this CLI and shows a working PHP DLEPlugin::bind call in an executed bootstrap. Chooses singleton true only for a deliberately shared stateless gateway; explicit bind defaults false.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "In this DLE plugin project, inspect dleplugin.yml and src/. I added a new Site\\ProfileController with public method show. Add a frontend route /profile/{int:user_id} so dleplugin dispatches it correctly.",
+      "expected_output": "Explains extras.routes is ignored by the CLI, registers Router::add in executed PHP before route-cache construction, uses the actual namespace and public show method accepting an argument array, and accounts for refreshing the framework route cache.",
+      "files": [],
+      "expectations": [
+        "States that current CLI ignores extras.routes and does not claim YAML alone registers routes.",
+        "Uses actual PHP Router::add registration with the requested paths, class names and methods.",
+        "Accounts for execution before framework route-cache construction and cache refresh.",
+        "Distinguishes frontend routing from admin/AJAX and from DI bindings."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Review my dleplugin.yml routes for a DLE plugin. Tell me whether the controller class names, route parameters, and method names look correct, and point out anything that should be handled as admin or ajax instead of extras.routes.",
+      "expected_output": "Explains that extras.routes has no CLI consumer, verifies actual PHP registrations and framework integration, checks class/public method, parameter syntax and argument-array usage, and distinguishes frontend/admin/AJAX dispatch.",
+      "files": [],
+      "expectations": [
+        "States that current CLI ignores extras.routes and does not claim YAML alone registers routes.",
+        "Uses actual PHP Router::add registration with the requested paths, class names and methods.",
+        "Accounts for execution before framework route-cache construction and cache refresh.",
+        "Distinguishes frontend routing from admin/AJAX and from DI bindings."
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Show me the dleplugin.yml snippet for two public DLE plugin routes: /catalog/{int:id} handled by iCooLER\\Shop\\Site\\CatalogController::view and /brands handled by iCooLER\\Shop\\Site\\BrandController::index. Also explain if I need di.bindings for these controllers.",
+      "expected_output": "States that extras.routes YAML is not compiled by the CLI. Shows two PHP Router::add registrations for the requested paths/classes/methods in an executed bootstrap, describes registration/cache timing, and binds collaborator interfaces separately only when needed.",
+      "files": [],
+      "expectations": [
+        "States that current CLI ignores extras.routes and does not claim YAML alone registers routes.",
+        "Uses actual PHP Router::add registration with the requested paths, class names and methods.",
+        "Accounts for execution before framework route-cache construction and cache refresh.",
+        "Distinguishes frontend routing from admin/AJAX and from DI bindings."
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "I have a DLE plugin built with dleplugin. Add an admin settings page that stores api_key and enabled in plugin config, renders a form, and redirects back with a success message after POST.",
+      "expected_output": "Uses App/Core Controller and Model/Form with explicit POST CSRF and model validation, a view that supplies escaped user_hash (stock @form does not), config setArray/save and admin URL redirect. Enqueues success notice explicitly if requested; Form::isSubmitAndValid alone is not validation. Uses the companion dle-admin-ui skill for rendered admin markup while retaining dleplugin manifest/runtime responsibilities.",
+      "files": []
+    },
+    {
+      "id": 11,
+      "prompt": "Create a public /catalog/{int:id} page for a DLE plugin using DLEPlugin. It should render template placeholders, set SEO title/description, and add breadcrumbs.",
+      "expected_output": "Uses PHP Router::add in an executed bootstrap rather than assuming extras.routes compilation. Implements a controller returning SiteResponse with TemplateString/Template, Seo and Breadcrumbs, and checks installed framework integration.",
+      "files": []
+    },
+    {
+      "id": 12,
+      "prompt": "In my DLEPlugin-based plugin, fetch JSON from an external API, cache it for one hour, log failures, and save selected rows into a plugin DB table.",
+      "expected_output": "Uses Core\\HTTP::request() for JSON/body support, App cache with time()+3600 expiry, app logger error handling, DB::insert/insertMany or update helpers with placeholders/structured data, and warns against unsafe SQL identifier concatenation.",
+      "files": []
+    },
+    {
+      "prompt": "Добавь в админку DLE-плагина страницу настроек с переключателем enabled и выпадающим списком режима. Она должна выглядеть как штатные страницы DLE и безопасно сохранять POST.",
+      "expected_output": "Uses dleplugin.yml admin section and alias, DLEPlugin admin controller/view, native panel/form classes, switch and uniform select, user_hash CSRF verification, escaped output, and dleplugin static. Uses the companion dle-admin-ui skill for rendered admin markup while retaining dleplugin manifest/runtime responsibilities.",
+      "files": [],
+      "id": 13
+    },
+    {
+      "prompt": "Напиши Pest-тесты для нового сервиса импорта в dleplugin-проекте и запусти их. Сервис берет данные из репозитория и фиксированных часов; проверь успешный импорт и ошибку API.",
+      "expected_output": "Reads project test patterns, uses deterministic clock and repository doubles, tests observable behavior with PestPHP under tests/, runs dleplugin test and dleplugin static without Composer.",
+      "files": [],
+      "id": 14
+    },
+    {
+      "id": 15,
+      "prompt": "Настрой плагин со slug: my-plugin и namespace: Acme\\Catalog. Класс src/Service/Importer.php должен автозагружаться; добавь admin.php и ajax.php и объясни alias.",
+      "expected_output": "Uses Acme\\Catalog\\Service, mount engine/Acme/Catalog, extras.autoloader true; entry files are src/admin.php and src/ajax.php with full DLE targets, not project-root files or a hard-coded iCooLER namespace.",
+      "files": []
+    },
+    {
+      "id": 16,
+      "prompt": "Собери split-плагин, добавь install/upgrade SQL и проверь патчи для двух распакованных версий DLE.",
+      "expected_output": "Uses scalar mysql hook blocks, requires src/.htaccess, runs build producing dist/<slug>.zip with XML and mounted sources, and check DLE_DIR1 DLE_DIR2 or check --file artifact.zip DLE_DIR1 DLE_DIR2.",
+      "files": []
+    },
+    {
+      "id": 17,
+      "prompt": "Нужно прогнать PHPStan для PHP 8.1 только на src/Service, подключить DLEPlugin из соседней папки и выдать JSON. Как настроить и запустить?",
+      "expected_output": "Uses static src/Service --php-version 8.1 --json, dlestatic.yml dependencies plus global static.dependencies or repeatable --dependency-root. Distinguishes target PHP from container PHP and static dependencies from manifest dependencies.",
+      "files": []
+    },
+    {
+      "id": 18,
+      "prompt": "Запусти один Pest-тест с фильтром и порогом покрытия 80%. DLEPlugin нужен плагину, а TestSupport нужен только тестам.",
+      "expected_output": "Uses test <file> --filter <pattern> --coverage-min 80, manifest dependencies by plugin display name, dletest.yml depends for TestSupport, global test.dependency_roots fallback, Docker with cached trial and fresh database. Does not invent a test --dependency-root flag.",
+      "files": []
+    },
+    {
+      "id": 19,
+      "prompt": "Покажи подготовку deploy на example.com: общий сайт уже сохранён, для проекта нужен другой admin path. Сначала dry-run, затем загрузка готового zip.",
+      "expected_output": "Uses project dleplugin-deploy.yaml or sites add/edit with correct scope; explains whole-record override, credential sources, upload --dry-run still builds/authenticates, upload --file artifact.zip without --version. Does not run a real upload without task authorization.",
+      "files": []
+    },
+    {
+      "id": 20,
+      "prompt": "Добавь главную админки плагина с самостоятельными разделами Настройки, Реакции и Статистика. Используй существующий DLEPlugin framework и dleplugin.yml.",
+      "expected_output": "Inspects manifest, src and executed bootstrap; keeps packaging and namespace conventions. Explicitly follows companion dle-admin-ui Plugin home: section directory guidance. Home contains only native two-column media links, three sections form two rows with final single entry. Settings/CRUD/statistics render only in their respective routes with back links; tabs may group settings within a section only. Uses admin->url() and endpoint router with AdminResponse, no duplicate raw shell, escapes output and retains CSRF checks for mutations. Runs applicable project checks without publishing or deployment.",
+      "files": []
+    },
+    {
+      "id": 21,
+      "prompt": "В DLETemplateVars добавление и редактирование переменной надо перенести со списка на отдельные страницы. Прочитай проект и внеси правки с проверкой.",
+      "expected_output": "Loads companion dle-admin-ui and inspects existing integration before choosing raw DLE or framework shell. Keeps linked parent-list and active current breadcrumbs, one automatic Home and escaped dynamic labels. Uses the installed AdminResponse breadcrumb contract when applicable, without duplicate echoheader/footer; validates save CSRF and runs relevant CLI checks. Does not replace native breadcrumbs with only a Back to list link.",
+      "files": []
+    },
+    {
+      "id": 22,
+      "prompt": "В dleplugin.yml заданы version: 1.4.0 и upgrade_url: https://example.com/demo.xml. Собери релиз 2.0.0, не меняя манифест, и объясни, какие значения попадут в XML.",
+      "expected_output": "Runs dleplugin build --version 2.0.0; the flag overrides only the XML <version>, while <upgradeurl> still comes from upgrade_url. Does not edit the manifest. Notes that --upgrade-url is a per-run override, only absolute https URLs are accepted, and an empty flag cannot clear the field.",
+      "files": []
+    },
+    {
+      "id": 23,
+      "prompt": "Загрузи готовый dist/demo.zip через deploy upload на example.com и объясни, можно ли одновременно указать --version или --upgrade-url. Отдельно уточни схему для localhost.",
+      "expected_output": "Uses deploy upload example.com --file dist/demo.zip without rebuilding. States that --file is mutually exclusive with --version and --upgrade-url, so those flags cannot be combined. Bare localhost and *.localhost default to HTTP; other hosts default to HTTPS unless an explicit URL is given.",
+      "files": []
+    },
+    {
+      "id": 24,
+      "prompt": "Проверь dist/demo.xml на совместимость с двумя распакованными DLE и объясни, какие операции реально ищутся, а какие пропускаются.",
+      "expected_output": "Runs dleplugin check --file dist/demo.xml DLE_DIR1 DLE_DIR2. Positional arguments are DLE roots, not the artifact. Only before/after/replace operations are searched; create and other action names are skipped. Reports failures per directory and exit code; does not claim PHP/SQL or runtime validation.",
+      "files": []
+    },
+    {
+      "id": 25,
+      "prompt": "После перехода тестового окружения на Pest 5 нужно обновить снапшоты. Где они лежат, как их обновить и почему тесты видят plugin templates, .env и conftest.php?",
+      "expected_output": "Uses dleplugin test --update-snapshots (or -u); snapshots use Pest's standard tests/.pest/snapshots/<test path>/ layout. Explains that test links the plugin's templates/ contents into the trial templates/Default/ and links plugin-root .env and conftest.php when present. Does not invent a test --dependency-root flag; test-only dependencies go through dletest.yml.",
+      "files": []
+    },
+    {
+      "id": 26,
+      "prompt": "В dlestatic.yml нужно игнорировать сообщение PHPStan регуляркой с lookahead. Почему шаблон не работает и что делать?",
+      "expected_output": "Explains that ignoreErrors are Go regular expressions (RE2) without lookarounds. Rewrites the pattern without lookaround or uses excludePaths/analyse instead. Keeps static in Docker with the image PHP 8.4 unless --php-version changes analysis assumptions.",
+      "files": []
+    },
+    {
+      "id": 27,
+      "prompt": "Включи extras.admin_section для плагина со slug Demo, name Bob's tools и description с апострофом. Что появится в админке и в SQL?",
+      "expected_output": "Sets extras.admin_section true and aliases src/admin.php to engine/inc/demo.php. The generated INSERT IGNORE/delete statements use lowercase slug demo; title comes from name, descr from description, icon is empty and allow_groups is all. Metadata is SQL-escaped and appended to enable/disable/delete without replacing existing hooks.",
+      "files": []
+    },
+    {
+      "id": 28,
+      "prompt": "После добавления di.bindings и extras.routes сборка проходит, но маршруты и зависимости не работают. Что на самом деле делает CLI и как это исправить?",
+      "expected_output": "Explains that the CLI ignores di.bindings and extras.routes; unknown or misspelled manifest keys are silently ignored and a successful build is not proof. Registers DLEPlugin::bind and Router::add in executed PHP before resolution/route-cache construction, verifies the bootstrap runs, and inspects generated XML/runtime behavior instead of trusting YAML.",
+      "files": []
+    }
+  ]
+}
