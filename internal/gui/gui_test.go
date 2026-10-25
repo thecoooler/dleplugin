@@ -106,6 +106,13 @@ func newEnv(t *testing.T) *env {
 	return &env{t: t, app: a, tt: ui.NewTester(a.view, 1120, 1500), desk: desk, run: run, cfg: cfg}
 }
 
+// finish waits until the running command and the rest of its batch end.
+func (e *env) finish() {
+	for e.app.wait(); e.app.busy() || e.app.batch != nil; e.app.wait() {
+	}
+	e.settle()
+}
+
 // settle waits for background work and draws the frames it asks for.
 func (e *env) settle() {
 	e.app.wait()
@@ -162,55 +169,74 @@ func writeProject(t *testing.T, dir string) string {
 
 func TestAddProjectAndBuild(t *testing.T) {
 	e := newEnv(t)
-	e.has("No project selected")
+	e.has("No plugin open")
 	e.snapshot("empty")
 	root := writeProject(t, filepath.Join(t.TempDir(), "demo"))
 	e.desk.dirs = []string{filepath.Join(root, "src")} // a subdirectory finds the root
-	e.click("Add project…")
+	e.click("Open plugin folder…")
 	e.has("Demo Plugin")
 	e.has("demo_plugin")
 	e.snapshot("overview")
 
 	s, err := LoadSettings(e.app.settingsPath)
-	if err != nil || len(s.Projects) != 1 || s.Projects[0].Path != root {
+	if err != nil || len(s.Projects) != 1 || s.Projects[0].Path != root || s.Selected != root {
 		t.Fatalf("settings %+v, %v", s, err)
 	}
 
-	e.click("Build")
 	e.app.projects[root].build.version = "2.0"
 	e.tt.Frame()
-	e.snapshot("build")
-	e.click("Build plugin")
+	e.click("Build")
 	if c := e.run.last(t); !slices.Equal(c.args, []string{"build", "--version", "2.0"}) || c.dir != root {
 		t.Fatalf("build call %+v", c)
 	}
 }
-
-func TestProjectPersistsAndRemoves(t *testing.T) {
+func TestProjectTabs(t *testing.T) {
 	e := newEnv(t)
-	root := writeProject(t, filepath.Join(t.TempDir(), "demo"))
-	e.app.selectProject(root)
+	first := writeProject(t, filepath.Join(t.TempDir(), "first"))
+	second := writeProject(t, filepath.Join(t.TempDir(), "second"))
+	e.app.selectProject(first)
+	e.app.selectProject(second)
 	e.settle()
+	e.app.settings.Project(first).CheckDirs = []string{"/dle"}
+	e.app.saveSettings()
+	e.snapshot("tabs")
 
 	again := newApp(e.run.run, e.desk, e.cfg, "test")
-	if again.selected != root || again.projects[root] == nil || again.projects[root].info.Slug != "demo_plugin" {
-		t.Fatalf("reloaded app selected %q", again.selected)
+	if again.selected != second || len(again.projects) != 2 || again.projects[first].info.Slug != "demo_plugin" {
+		t.Fatalf("reloaded app selected %q with %d projects", again.selected, len(again.projects))
 	}
 
-	e.click("Remove from list…")
-	e.has("Remove “Demo Plugin”?")
-	if err := e.tt.Click("Remove"); err != nil {
-		t.Fatal(err)
-	}
+	// Closing the selected tab selects the one in its place.
+	e.app.show(first)
+	e.app.closeProject(first)
 	e.settle()
-	if len(e.app.settings.Projects) != 0 || e.app.selected != "" {
-		t.Fatalf("projects %+v, selected %q", e.app.settings.Projects, e.app.selected)
+	if e.app.projects[first] != nil || e.app.selected != second {
+		t.Fatalf("selected %q after closing the first tab", e.app.selected)
 	}
-	if !exists(root + "/dleplugin.yml") {
-		t.Fatal("remove deleted the project")
+	if !slices.Equal(e.app.settings.Open(), []string{second}) || !slices.Equal(e.app.settings.Recent(), []string{first}) {
+		t.Fatalf("open %q, recent %q", e.app.settings.Open(), e.app.settings.Recent())
+	}
+	e.click("Close Demo Plugin")
+	if e.app.selected != "" || len(e.app.projects) != 0 {
+		t.Fatalf("selected %q with %d projects", e.app.selected, len(e.app.projects))
+	}
+	e.has("Recent")
+	e.snapshot("recent")
+	if !exists(first+"/dleplugin.yml") || !exists(second+"/dleplugin.yml") {
+		t.Fatal("closing deleted the project")
+	}
+
+	// A reopened project keeps its settings and becomes the last tab.
+	e.app.addProjectDir(first)
+	e.settle()
+	if e.app.selected != first || !slices.Equal(e.app.settings.Project(first).CheckDirs, []string{"/dle"}) {
+		t.Fatalf("reopened %q with %+v", e.app.selected, e.app.settings.Project(first))
+	}
+	e.app.forgetProject(second)
+	if e.app.settings.Project(second) != nil {
+		t.Fatal("forgotten project remains")
 	}
 }
-
 func TestNewProjectDialog(t *testing.T) {
 	e := newEnv(t)
 	dir := filepath.Join(t.TempDir(), "fresh")
@@ -218,7 +244,7 @@ func TestNewProjectDialog(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.desk.dirs = []string{dir}
-	e.click("Add project…")
+	e.click("Open plugin folder…")
 	e.has("No dleplugin.yml")
 	e.click("Create project…")
 	e.has("New plugin project")
@@ -265,34 +291,37 @@ func TestSitesAndDeploy(t *testing.T) {
 	e.has("saved")
 	e.snapshot("sites")
 
-	// Saved password: the upload passes no password.
-	pv.tab = tabDeploy
-	e.settle()
-	if pv.deploy.site != "dev.localhost" {
-		t.Fatalf("site %q", pv.deploy.site)
-	}
-	pv.deploy.allowNew = true
+	e.click("Deploy…")
+	e.has("Deploy Demo Plugin")
+	rows := pv.sites.rows
+	dev, _ := findSite(rows, "dev.localhost")
+	shared, _ := findSite(rows, "shared.example")
+	f := &pv.deploy
+	f.choose(dev, true)
+	f.choose(shared, true)
+	f.allowNew = true
+	e.tt.Frame()
+	// Without a saved password the upload waits for one.
+	e.has("Enter the password for admin@shared.example.")
+	f.setPassword(shared, "pw")
+	f.remember = true
 	e.tt.Frame()
 	e.snapshot("deploy")
-	e.click("Upload")
-	c := e.run.last(t)
-	if !slices.Equal(c.args, []string{"deploy", "upload", "dev.localhost", "--new"}) || c.stdin != "" {
+	e.click("Upload to 2 sites")
+	if e.app.deployOpen {
+		t.Fatal("the dialog stays open")
+	}
+	e.finish()
+	if len(e.run.calls) != 2 {
+		t.Fatalf("calls %+v", e.run.calls)
+	}
+	// The saved password is not passed; the typed one goes to stdin.
+	if c := e.run.calls[0]; !slices.Equal(c.args, []string{"deploy", "upload", "dev.localhost", "--new"}) || c.stdin != "" || c.dir != root {
 		t.Fatalf("upload %+v", c)
 	}
-
-	// Without a saved password the button waits for one, which goes to
-	// stdin and, when asked, to the credential store.
-	pv.deploy.site = "shared.example"
-	e.tt.Frame()
-	e.has("Enter the password: none is saved for admin@shared.example.")
-	pv.deploy.password, pv.deploy.remember = "pw", true
-	e.tt.Frame()
-	e.click("Upload")
-	c = e.run.last(t)
-	if !slices.Equal(c.args, []string{"deploy", "upload", "shared.example", "--password-stdin", "--new"}) || c.stdin != "pw" {
+	if c := e.run.calls[1]; !slices.Equal(c.args, []string{"deploy", "upload", "shared.example", "--password-stdin", "--new"}) || c.stdin != "pw" {
 		t.Fatalf("upload %+v", c)
 	}
-	e.settle()
 	creds, err := credentials(e.cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -300,14 +329,13 @@ func TestSitesAndDeploy(t *testing.T) {
 	if p, loc, _ := creds.Password("shared.example", "admin"); loc == "" || p != "pw" {
 		t.Fatalf("password not remembered: %q %q", p, loc)
 	}
-	if pv.deploy.password != "" {
+	if f.passwords != nil || f.remember {
 		t.Fatal("the password stays in the form")
 	}
-	if ps := e.app.settings.Project(root); ps.DeploySite != "" && ps.DeploySite != "shared.example" {
-		t.Fatalf("deploy site %q", ps.DeploySite)
+	if ps := e.app.settings.Project(root); !slices.Equal(ps.DeploySites, []string{"dev.localhost", "shared.example"}) {
+		t.Fatalf("deploy sites %q", ps.DeploySites)
 	}
 }
-
 func TestSiteDialogShowsCommandError(t *testing.T) {
 	e := newEnv(t)
 	root := writeProject(t, filepath.Join(t.TempDir(), "demo"))
@@ -429,10 +457,10 @@ func TestFormsArgs(t *testing.T) {
 		want  []string
 	}{
 		{"build", (&buildForm{version: " 1.0 ", upgradeURL: "https://x/u"}).args(), "", []string{"build", "--version", "1.0", "--upgrade-url", "https://x/u"}},
-		{"custom upload", func() []string {
-			a, _ := (&deployForm{site: customSite, target: "https://x/panel.php", login: "u", source: 1, file: "/f.zip", version: "ignored", dryRun: true, insecure: true}).args()
+		{"upload file", func() []string {
+			a, _ := (&deployForm{source: 1, file: "/f.zip", version: "ignored", dryRun: true, insecure: true}).args(siteRow{host: "x.com"})
 			return a
-		}(), "", []string{"deploy", "upload", "https://x/panel.php", "--login", "u", "--file", "/f.zip", "--dry-run", "--insecure"}},
+		}(), "", []string{"deploy", "upload", "x.com", "--file", "/f.zip", "--dry-run", "--insecure"}},
 		{"edit site", func() []string {
 			a, _ := (&siteForm{edit: true, global: true, target: "x.com", login: "u"}).args()
 			return a
@@ -479,7 +507,7 @@ func TestSettingsFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fmt.Sprint(s.Projects); got != "[{/a [] } {/b [/dle] }]" {
+	if got := fmt.Sprint(s.Projects); got != "[{/a false [] [] } {/b false [/dle] [] }]" {
 		t.Fatalf("projects %s", got)
 	}
 	if !s.AddProject("/c") || s.AddProject("/b/") {
@@ -490,8 +518,22 @@ func TestSettingsFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, _ = LoadSettings(path)
-	if got := fmt.Sprint(s.Projects); got != "[{/b [/dle] } {/c [] }]" {
+	if got := fmt.Sprint(s.Projects); got != "[{/b false [/dle] [] } {/c false [] [] }]" {
 		t.Fatalf("saved projects %s", got)
+	}
+	s.CloseProject("/b")
+	if !slices.Equal(s.Open(), []string{"/c"}) || !slices.Equal(s.Recent(), []string{"/b"}) {
+		t.Fatalf("open %q, recent %q", s.Open(), s.Recent())
+	}
+	if !s.AddProject("/b") || !slices.Equal(s.Open(), []string{"/c", "/b"}) || len(s.Recent()) != 0 {
+		t.Fatalf("reopened: open %q, recent %q", s.Open(), s.Recent())
+	}
+	// The single deploy site of older versions becomes the list.
+	if err := os.WriteFile(path, []byte("projects:\n- path: /a\n  deploy_site: x.com\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s, err = LoadSettings(path); err != nil || !slices.Equal(s.Projects[0].DeploySites, []string{"x.com"}) || s.Projects[0].DeploySite != "" {
+		t.Fatalf("migrated %+v, %v", s.Projects, err)
 	}
 	if err := os.WriteFile(path, []byte("projects: 3\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -501,7 +543,7 @@ func TestSettingsFile(t *testing.T) {
 	}
 }
 
-func TestDeployTargetClearsPassword(t *testing.T) {
+func TestDeployPasswordsStayWithTheirSite(t *testing.T) {
 	e := newEnv(t)
 	root := writeProject(t, filepath.Join(t.TempDir(), "demo"))
 	global, _ := registryPaths(e.cfg, root)
@@ -513,34 +555,111 @@ func TestDeployTargetClearsPassword(t *testing.T) {
 	e.app.selectProject(root)
 	e.settle()
 	pv := e.app.projects[root]
-	pv.tab = tabDeploy
-	e.settle()
-	for _, target := range []string{"second.example", customSite} {
-		pv.deploy.password, pv.deploy.remember = "secret", true
-		e.tt.Frame()
-		e.click(pv.deploy.site)
-		e.click(target)
-		if pv.deploy.password != "" || pv.deploy.remember {
-			t.Fatalf("credentials retained for %s", target)
-		}
+	e.click("Deploy…")
+	f := &pv.deploy
+	first, _ := findSite(pv.sites.rows, "first.example")
+	second, _ := findSite(pv.sites.rows, "second.example")
+	f.choose(first, true)
+	f.setPassword(first, "secret")
+	f.choose(second, true)
+	if f.password(second) != "" {
+		t.Fatal("a password went to another site")
 	}
-	for _, field := range []string{"Host or admin URL", "Login"} {
-		pv.deploy.password, pv.deploy.remember = "secret", true
-		e.tt.Frame()
-		e.click(field)
-		e.tt.Type("changed")
-		if pv.deploy.password != "" || pv.deploy.remember {
-			t.Fatalf("credentials retained after editing %s", field)
-		}
+	// A password is for its login: it does not go to a site edited since.
+	edited := first
+	edited.site.Login = "other"
+	if f.password(edited) != "" {
+		t.Fatal("a password went to another login")
 	}
-	// A removed selection must not transfer credentials to the default site.
-	pv.deploy.site, pv.deploy.password, pv.deploy.remember = "removed.example", "secret", true
-	e.tt.Frame()
-	if pv.deploy.password != "" || pv.deploy.remember {
-		t.Fatal("credentials retained after removing site")
+	// Unchoosing a site forgets its password.
+	f.choose(first, false)
+	f.choose(first, true)
+	if f.password(first) != "" {
+		t.Fatal("password retained after unchoosing the site")
+	}
+	f.setPassword(first, "secret")
+	e.click("Cancel")
+	if e.app.deployOpen || f.passwords != nil {
+		t.Fatal("password retained after closing the dialog")
+	}
+	e.click("Deploy…")
+	if !e.app.deployOpen || f.password(first) != "" {
+		t.Fatal("password retained on reopening")
 	}
 }
 
+func TestDeployContinuesAfterFailureAndStopsOnCancel(t *testing.T) {
+	e := newEnv(t)
+	root := writeProject(t, filepath.Join(t.TempDir(), "demo"))
+	global, _ := registryPaths(e.cfg, root)
+	sites := map[string]deploysites.Site{}
+	for _, h := range []string{"a.example", "b.example", "c.example"} {
+		sites[h] = deploysites.Site{Login: "admin", PasswordEnv: "TEST_GUI_DEPLOY_PASSWORD"}
+	}
+	t.Setenv("TEST_GUI_DEPLOY_PASSWORD", "pw")
+	if err := deploysites.Save(global, &deploysites.Document{Sites: sites}); err != nil {
+		t.Fatal(err)
+	}
+	e.app.selectProject(root)
+	e.settle()
+	pv := e.app.projects[root]
+	choose := func() {
+		e.app.openDeploy(pv)
+		e.settle()
+		for _, r := range pv.sites.rows {
+			pv.deploy.choose(r, true)
+		}
+	}
+
+	choose()
+	var hosts []string
+	e.app.run = func(_ context.Context, _ string, args []string, _ string, _ io.Writer) int {
+		hosts = append(hosts, args[2])
+		if args[2] == "b.example" {
+			return 1
+		}
+		return 0
+	}
+	e.app.deploy(pv)
+	e.finish()
+	if !slices.Equal(hosts, []string{"a.example", "b.example", "c.example"}) || e.app.batch != nil || e.app.busy() {
+		t.Fatalf("uploads %q", hosts)
+	}
+	if !slices.Contains(e.app.console.lines, "✖ Deploy to b.example (2/3) failed (exit code 1)") {
+		t.Fatalf("console %q", e.app.console.lines)
+	}
+
+	choose()
+	hosts = nil
+	e.app.run = func(ctx context.Context, _ string, args []string, _ string, _ io.Writer) int {
+		hosts = append(hosts, args[2])
+		<-ctx.Done()
+		return 1
+	}
+	e.app.deploy(pv)
+	e.app.cancelJob()
+	e.finish()
+	if !slices.Equal(hosts, []string{"a.example"}) || e.app.batch != nil || e.app.busy() {
+		t.Fatalf("uploads after cancel %q", hosts)
+	}
+}
+
+func TestDeployDialogAddsSite(t *testing.T) {
+	e := newEnv(t)
+	root := writeProject(t, filepath.Join(t.TempDir(), "demo"))
+	e.app.selectProject(root)
+	e.settle()
+	e.click("Deploy…")
+	e.has("No saved sites yet: add one to deploy to it.")
+	e.click("Add site…")
+	if e.app.deployOpen || !e.app.siteOpen {
+		t.Fatalf("deploy %v, site %v", e.app.deployOpen, e.app.siteOpen)
+	}
+	e.click("Cancel")
+	if !e.app.deployOpen || e.app.siteOpen {
+		t.Fatalf("the deploy dialog does not come back: deploy %v, site %v", e.app.deployOpen, e.app.siteOpen)
+	}
+}
 func TestEditSitePreservesResolvedAdminPath(t *testing.T) {
 	for _, site := range []deploysites.Site{
 		{URL: "https://example.com/dle/panel.php", Login: "admin"},

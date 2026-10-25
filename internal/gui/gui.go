@@ -1,6 +1,7 @@
 // Package gui is the desktop app of dleplugin: a native window, drawn by
 // MyGo without a webview, that manages plugin projects and runs the CLI's
-// commands on them (build, deploy, sites, checks).
+// commands on them (build, deploy, sites, checks). Each open project is a
+// tab.
 //
 // The commands run in process through app.Execute with the arguments the
 // CLI documents, so the GUI behaves exactly as the CLI does; their output
@@ -11,6 +12,7 @@ import (
 	"context"
 	"io"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -49,9 +51,8 @@ type App struct {
 	bg      sync.WaitGroup
 
 	settings *Settings
-	projects map[string]*projectView
-	selected string // a project root, pageSites, pageSettings or "" for none
-	open     struct{ projects, general bool }
+	projects map[string]*projectView // the open projects, by root
+	selected string                  // a project root, pageSites, pageSettings or "" for none
 	notices  []notice
 
 	globalSites sitesView
@@ -63,6 +64,7 @@ type App struct {
 	consolePercent float32
 	job            *job
 	lastJob        *job
+	batch          *batch
 
 	// Dialogs.
 	initOpen    bool
@@ -70,7 +72,9 @@ type App struct {
 	initErr     string
 	initAsk     bool
 	initAskDir  string
-	removeAsk   bool
+	deployOpen  bool
+	deployRoot  string
+	siteReturn  bool // reopen the deploy dialog when the site dialog closes
 	siteOpen    bool
 	siteForm    siteForm
 	siteErr     string
@@ -78,7 +82,7 @@ type App struct {
 	siteRemoved siteRow
 }
 
-// Sidebar pages that are not projects.
+// Pages that are not projects.
 const (
 	pageSites    = "@sites"
 	pageSettings = "@settings"
@@ -90,7 +94,7 @@ type notice struct {
 	error bool
 }
 
-// projectView is a project in the sidebar with the state of its pages.
+// projectView is an open project with the state of its page.
 type projectView struct {
 	*project
 	tab    int
@@ -116,6 +120,12 @@ type sitesView struct {
 	selected int
 }
 
+// batch is a run of commands one after another, such as the uploads of a
+// deploy to several sites; canceling its command cancels the rest.
+type batch struct {
+	canceled bool
+}
+
 // job is a command running, or the last one run.
 type job struct {
 	title    string
@@ -139,18 +149,21 @@ func newApp(run runFunc, desk desktop, configPath, version string) *App {
 		projects:       map[string]*projectView{},
 		consolePercent: 70,
 	}
-	a.open.projects, a.open.general = true, true
 	a.console.list.FollowEnd = true
 	s, err := LoadSettings(a.settingsPath)
 	if err != nil {
 		a.notify(err.Error(), true)
 	}
 	a.settings = s
-	for _, p := range s.Projects {
-		a.projects[p.Path] = a.newProjectView(p.Path)
+	open := s.Open()
+	for _, root := range open {
+		a.projects[root] = a.newProjectView(root)
 	}
-	if len(s.Projects) > 0 {
-		a.selected = s.Projects[0].Path
+	switch {
+	case s.Selected == pageSites || s.Selected == pageSettings || a.projects[s.Selected] != nil:
+		a.selected = s.Selected
+	case len(open) > 0:
+		a.selected = open[0]
 	}
 	return a
 }
@@ -160,7 +173,7 @@ func (a *App) newProjectView(root string) *projectView {
 	pv.checks.selected = -1
 	pv.sites.selected = -1
 	if ps := a.settings.Project(root); ps != nil {
-		pv.deploy.site = ps.DeploySite
+		pv.deploy.sites = slices.Clone(ps.DeploySites)
 	}
 	return pv
 }
@@ -264,8 +277,11 @@ func (a *App) start(title, dir string, args []string, stdin string, done func(co
 	})
 }
 
-// cancelJob cancels the running command.
+// cancelJob cancels the running command, and the rest of its batch.
 func (a *App) cancelJob() {
+	if a.batch != nil {
+		a.batch.canceled = true
+	}
 	if a.job != nil {
 		a.job.cancel()
 	}
@@ -278,8 +294,16 @@ func (a *App) appendConsole(lines ...string) {
 	}
 }
 
-// selectProject adds the project at root to the sidebar, or selects it when
-// it is there.
+// show selects an open project or a page, and remembers the choice.
+func (a *App) show(selected string) {
+	a.selected = selected
+	if a.settings.Selected != selected {
+		a.settings.Selected = selected
+		a.saveSettings()
+	}
+}
+
+// selectProject opens the project at root in a tab, or selects its tab.
 func (a *App) selectProject(root string) {
 	if a.settings.AddProject(root) {
 		a.saveSettings()
@@ -287,19 +311,35 @@ func (a *App) selectProject(root string) {
 	if _, ok := a.projects[root]; !ok {
 		a.projects[root] = a.newProjectView(root)
 	}
-	a.selected = root
+	a.show(root)
 }
 
-// removeProject removes the selected project from the sidebar; its files
-// stay.
-func (a *App) removeProject(root string) {
-	a.settings.RemoveProject(root)
+// closeProject closes the tab of a project; its files and settings stay,
+// and it is offered to open again. The next tab is selected in its place.
+func (a *App) closeProject(root string) {
+	open := a.settings.Open()
+	i := slices.IndexFunc(open, func(r string) bool { return samePath(r, root) })
+	a.settings.CloseProject(root)
 	delete(a.projects, root)
-	a.saveSettings()
-	a.selected = ""
-	if len(a.settings.Projects) > 0 {
-		a.selected = a.settings.Projects[0].Path
+	if a.deployRoot == root {
+		a.deployOpen = false
 	}
+	if a.selected == root {
+		open = a.settings.Open()
+		next := ""
+		if len(open) > 0 {
+			next = open[min(max(i, 0), len(open)-1)]
+		}
+		a.show(next)
+	}
+	a.saveSettings()
+}
+
+// forgetProject removes a closed project and its settings from the list of
+// those to open again; its files stay.
+func (a *App) forgetProject(root string) {
+	a.settings.RemoveProject(root)
+	a.saveSettings()
 }
 
 // reload reads the project's manifest and sites again.

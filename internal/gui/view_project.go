@@ -10,12 +10,10 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-var projectTabs = []string{"Overview", "Build", "Deploy", "Sites", "Checks"}
+var projectTabs = []string{"Overview", "Sites", "Checks"}
 
 const (
 	tabOverview = iota
-	tabBuild
-	tabDeploy
 	tabSites
 	tabChecks
 )
@@ -32,8 +30,11 @@ func (a *App) projectPage(c *ui.Context, pv *projectView) {
 		if ui.Button(c.Key("reload"), "Reload").Tooltip("Read dleplugin.yml and the sites again").Clicked() {
 			a.reload(pv)
 		}
-		if ui.Button(c.Key("remove-project"), "Remove from list…").Tooltip("Remove from the list; the files stay").Clicked() {
-			a.removeAsk = true
+		if ui.Button(c.Key("build"), "Build").Disabled(a.busy()).Tooltip("Write the plugin into dist/").Clicked() {
+			a.build(pv)
+		}
+		if ui.PrimaryButton(c.Key("deploy"), "Deploy…").Disabled(a.busy()).Tooltip("Upload the plugin to saved sites").Clicked() {
+			a.openDeploy(pv)
 		}
 	})
 	ui.Row(c).Padding(10, 20, 0).Children(func() {
@@ -43,10 +44,6 @@ func (a *App) projectPage(c *ui.Context, pv *projectView) {
 		switch pv.tab {
 		case tabOverview:
 			a.overviewTab(c, pv)
-		case tabBuild:
-			a.buildTab(c, pv)
-		case tabDeploy:
-			a.deployTab(c, pv)
 		case tabSites:
 			a.sitesTab(c, pv)
 		case tabChecks:
@@ -86,6 +83,7 @@ func (a *App) overviewTab(c *ui.Context, pv *projectView) {
 			value("Source files", itoa(pv.files))
 		})
 	})
+	a.buildOptions(c, pv)
 	section(c, "Build artifacts", "Files of dist/, written by Build.", func() {
 		a.distList(c, pv)
 	})
@@ -110,23 +108,18 @@ func (a *App) distList(c *ui.Context, pv *projectView) {
 	}
 }
 
-func (a *App) buildTab(c *ui.Context, pv *projectView) {
-	section(c, "Build", "Writes the plugin XML (and the zip of split files, README.html) into dist/.", func() {
+// buildOptions are the values Build uses instead of dleplugin.yml's.
+func (a *App) buildOptions(c *ui.Context, pv *projectView) {
+	section(c, "Build options", "Build writes the plugin XML (and the zip of split files, README.html) into dist/; these override dleplugin.yml.", func() {
 		ui.Form(c, func() {
 			ui.Field(c, "Version", func() {
 				ui.TextInput(c, &pv.build.version).Placeholder(placeholder(pv, func() string { return pv.info.Version }, "from dleplugin.yml"))
-			}).Description("Overrides version of dleplugin.yml.")
+			})
 			ui.Field(c, "Upgrade URL", func() {
 				ui.TextInput(c, &pv.build.upgradeURL).Placeholder(placeholder(pv, func() string { return pv.info.UpgradeURL }, "from dleplugin.yml"))
-			}).Description("An https link; overrides upgrade_url of dleplugin.yml.")
-		})
-		ui.Row(c).Gap(8).Children(func() {
-			if ui.PrimaryButton(c.Key("build"), "Build plugin").Disabled(a.busy()).Clicked() {
-				a.build(pv)
-			}
+			}).Description("An https link.")
 		})
 	})
-	section(c, "Artifacts", "", func() { a.distList(c, pv) })
 }
 
 // placeholder shows a manifest value in an empty field that overrides it.
@@ -148,186 +141,6 @@ func (a *App) build(pv *projectView) {
 	})
 }
 
-func (a *App) deployTab(c *ui.Context, pv *projectView) {
-	t := c.Theme()
-	f := &pv.deploy
-	options := append(hosts(pv.sites.rows), customSite)
-	if f.site != "" && !slices.Contains(options, f.site) && pv.sites.loaded {
-		f.site = ""
-		f.password, f.remember = "", false
-	}
-	if f.site == "" && len(options) > 1 {
-		f.site = options[0]
-		f.password, f.remember = "", false
-	}
-	site, saved := findSite(pv.sites.rows, f.site)
-	section(c, "Deploy to a site", "Logs in to the DLE admin panel and installs or updates the plugin.", func() {
-		ui.Form(c, func() {
-			ui.Field(c, "Site", func() {
-				ui.Row(c).Gap(8).Children(func() {
-					if ui.Select(c, &f.site, options).Label("Site").Changed() {
-						f.password, f.remember = "", false
-						site, saved = findSite(pv.sites.rows, f.site)
-						a.rememberDeploySite(pv)
-					}
-					if pv.sites.loading {
-						ui.Spinner(c).Size(14, 14)
-					}
-				})
-			}).Description(siteDescription(site, saved))
-			if f.custom() {
-				ui.Field(c, "Host or admin URL", func() {
-					if ui.TextInput(c, &f.target).Placeholder("example.com or https://example.com/admin.php").Changed() {
-						f.password, f.remember = "", false
-					}
-				})
-				ui.Field(c, "Login", func() {
-					if ui.TextInput(c, &f.login).Changed() {
-						f.password, f.remember = "", false
-					}
-				})
-			}
-			ui.Field(c, "Plugin", func() {
-				ui.Segmented(c, &f.source, "Build the project", "Ready file")
-			})
-			if f.source == 1 {
-				ui.Field(c, "File", func() {
-					ui.Row(c).Gap(8).Children(func() {
-						ui.TextInput(c, &f.file).Placeholder(".xml or .zip").Grow(1)
-						if ui.Button(c.Key("choose-file"), "Choose…").Clicked() {
-							a.chooseDeployFile(pv)
-						}
-					})
-				})
-			} else {
-				ui.Field(c, "Version", func() {
-					ui.TextInput(c, &f.version).Placeholder(placeholder(pv, func() string { return pv.info.Version }, "from dleplugin.yml"))
-				})
-				ui.Field(c, "Upgrade URL", func() {
-					ui.TextInput(c, &f.upgradeURL).Placeholder(placeholder(pv, func() string { return pv.info.UpgradeURL }, "from dleplugin.yml"))
-				})
-			}
-			ui.Field(c, "Password", func() {
-				ui.TextInput(c, &f.password).Password().Placeholder(passwordPlaceholder(site, saved))
-			})
-			ui.Fieldset(c, "Options", func() {
-				ui.Field(c, "", func() {
-					ui.Column(c).Gap(6).Children(func() {
-						if saved {
-							ui.Checkbox(c, &f.remember, "Remember the password in the credential store")
-						}
-						ui.Checkbox(c, &f.allowNew, "Install the plugin when it is not installed")
-						ui.Checkbox(c, &f.dryRun, "Dry run: log in and look the plugin up without uploading")
-						ui.Checkbox(c, &f.insecure, "Skip TLS certificate verification")
-					})
-				})
-			})
-		})
-		err := f.validate(pv.sites.rows)
-		if err == nil && !f.custom() && saved && f.password == "" && site.password != passwordEnv && site.password != passwordStored {
-			err = errString("Enter the password: none is saved for " + site.site.Login + "@" + site.host + ".")
-		}
-		if err == nil && f.custom() && f.password == "" && os.Getenv(defaultPasswordEnv()) == "" {
-			err = errString("Enter the password.")
-		}
-		ui.Row(c).Gap(12).Children(func() {
-			label := "Upload"
-			if f.dryRun {
-				label = "Dry run"
-			}
-			if ui.PrimaryButton(c.Key("deploy"), label).Disabled(a.busy() || err != nil).Clicked() {
-				a.deployUpload(pv)
-			}
-			if err != nil && f.site != "" {
-				ui.Text(c, err.Error()).TextColor(t.TextMuted).FontSize(12).Shrink(1)
-			}
-		})
-	})
-}
-
-type errString string
-
-func (e errString) Error() string { return string(e) }
-
-func siteDescription(site siteRow, saved bool) string {
-	if !saved {
-		return "A site that is not saved; add it on the Sites tab to keep its settings."
-	}
-	return site.admin + " · " + site.site.Login + " · " + site.scope
-}
-
-func passwordPlaceholder(site siteRow, saved bool) string {
-	switch {
-	case !saved:
-		return "Admin password, or $" + defaultPasswordEnv()
-	case site.password == passwordStored:
-		return "Saved in the credential store"
-	case site.password == passwordEnv:
-		return "From $" + site.env
-	}
-	return "Admin password"
-}
-
-func (a *App) rememberDeploySite(pv *projectView) {
-	ps := a.settings.Project(pv.root)
-	if ps == nil || pv.deploy.custom() || ps.DeploySite == pv.deploy.site {
-		return
-	}
-	ps.DeploySite = pv.deploy.site
-	a.saveSettings()
-}
-
-func (a *App) chooseDeployFile(pv *projectView) {
-	a.background(func() {
-		path, err := a.desk.chooseFile("Plugin file")
-		a.post(func() {
-			if err != nil {
-				a.notify(err.Error(), true)
-			} else if path != "" {
-				pv.deploy.file = path
-			}
-		})
-	})
-}
-
-func (a *App) deployUpload(pv *projectView) {
-	f := pv.deploy
-	args, stdin := f.args()
-	site, saved := findSite(pv.sites.rows, f.site)
-	title := "Deploy"
-	if f.dryRun {
-		title = "Dry run"
-	}
-	a.start(title, pv.root, args, stdin, func(code int, _ []string) {
-		pv.project = loadProject(pv.root)
-		if code != 0 {
-			return
-		}
-		pv.deploy.password = ""
-		if f.remember && saved && f.password != "" {
-			a.savePassword(site.host, site.site.Login, f.password)
-		}
-		a.notify(title+" finished", false)
-	})
-}
-
-// savePassword keeps a password that worked in the credential store.
-func (a *App) savePassword(host, login, password string) {
-	a.background(func() {
-		fallback, err := savePassword(a.configPath, host, login, password)
-		a.post(func() {
-			if err != nil {
-				a.notify(err.Error(), true)
-				return
-			}
-			if fallback != nil {
-				a.notify(fallback.Error()+"; password saved to the credentials file instead", false)
-			}
-			a.refreshSites()
-		})
-	})
-}
-
 func (a *App) sitesTab(c *ui.Context, pv *projectView) {
 	global, project := registryPaths(a.configPath, pv.root)
 	section(c, "Deployment sites", "Sites of "+project+" replace global sites ("+global+") of the same host.", func() {
@@ -340,7 +153,7 @@ func (a *App) globalSitesPage(c *ui.Context) {
 		a.loadSites(&a.globalSites, "")
 	}
 	global, _ := registryPaths(a.configPath, "")
-	pageHeader(c, "Global sites", global, func() {
+	pageHeader(c, "Sites", global, func() {
 		if ui.Button(c.Key("reload-sites"), "Reload").Clicked() {
 			a.loadSites(&a.globalSites, "")
 		}
@@ -390,7 +203,7 @@ func (a *App) sitesTable(c *ui.Context, sv *sitesView, root string) {
 	if sv.selected >= 0 && sv.selected < len(rows) {
 		chosen = &rows[sv.selected]
 	}
-	// Global sites shown in a project are edited on the Global sites page.
+	// Global sites shown in a project are edited on the Sites page.
 	editable := chosen != nil && (root == "" || chosen.scope == "project")
 	ui.Row(c).Gap(8).Children(func() {
 		if ui.Button(c.Key("add-site"), "Add site…").Disabled(a.busy()).Clicked() {
@@ -411,7 +224,7 @@ func (a *App) sitesTable(c *ui.Context, sv *sitesView, root string) {
 			a.siteRemove, a.siteRemoved = true, *chosen
 		}
 		if chosen != nil && !editable {
-			ui.Text(c, "A global site: edit it on the Global sites page.").FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, "A global site: edit it on the Sites page.").FontSize(12).TextColor(t.TextMuted)
 		}
 	})
 	if chosen != nil && chosen.admin != "" {

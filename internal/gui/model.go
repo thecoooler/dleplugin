@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/thecoooler/dleplugin/internal/config"
@@ -22,19 +21,27 @@ const SettingsFilename = "gui.yaml"
 
 // Settings is what the GUI remembers between runs.
 type Settings struct {
-	// Projects are the plugin projects in the sidebar, in order.
+	// Projects are the plugin projects the app knows: the open ones are its
+	// tabs, in order, and the closed ones are offered to open again.
 	Projects []ProjectSettings `yaml:"projects"`
+	// Selected is the open project or page shown.
+	Selected string `yaml:"selected,omitempty"`
 	// Verbose runs commands with --verbose.
 	Verbose bool `yaml:"verbose,omitempty"`
 }
 
-// ProjectSettings is a project in the sidebar and the values its forms keep.
+// ProjectSettings is a project and the values its forms keep.
 type ProjectSettings struct {
 	// Path is the project root, the directory of dleplugin.yml.
 	Path string `yaml:"path"`
+	// Closed projects have no tab; their settings stay for when they open.
+	Closed bool `yaml:"closed,omitempty"`
 	// CheckDirs are the DLE directories the patch check runs against.
 	CheckDirs []string `yaml:"check_dirs,omitempty"`
-	// DeploySite is the host last chosen for upload.
+	// DeploySites are the hosts last chosen for upload.
+	DeploySites []string `yaml:"deploy_sites,omitempty"`
+	// DeploySite is the single host older versions kept; it is read into
+	// DeploySites.
 	DeploySite string `yaml:"deploy_site,omitempty"`
 }
 
@@ -55,6 +62,10 @@ func LoadSettings(path string) (*Settings, error) {
 	var projects []ProjectSettings
 	for _, p := range s.Projects {
 		if p.Path != "" && s.project(p.Path, projects) == nil {
+			if p.DeploySite != "" && len(p.DeploySites) == 0 {
+				p.DeploySites = []string{p.DeploySite}
+			}
+			p.DeploySite = ""
 			projects = append(projects, p)
 		}
 	}
@@ -77,17 +88,58 @@ func (s *Settings) project(root string, in []ProjectSettings) *ProjectSettings {
 // Project returns the settings of the project at root, or nil.
 func (s *Settings) Project(root string) *ProjectSettings { return s.project(root, s.Projects) }
 
-// AddProject adds root unless it is listed already, and reports whether it
-// was added.
+// AddProject opens root, adding it unless it is listed already, and
+// reports whether the settings changed.
 func (s *Settings) AddProject(root string) bool {
-	if s.Project(root) != nil {
-		return false
+	if p := s.Project(root); p != nil {
+		if !p.Closed {
+			return false
+		}
+		// A reopened project becomes the last tab.
+		p.Closed = false
+		reopened := *p
+		s.RemoveProject(root)
+		s.Projects = append(s.Projects, reopened)
+		return true
 	}
 	s.Projects = append(s.Projects, ProjectSettings{Path: root})
 	return true
 }
 
-// RemoveProject removes root from the list.
+// CloseProject closes the tab of root; its settings stay. It moves to the
+// end of the list, which Recent reads backwards.
+func (s *Settings) CloseProject(root string) {
+	if p := s.Project(root); p != nil {
+		closed := *p
+		closed.Closed = true
+		s.RemoveProject(root)
+		s.Projects = append(s.Projects, closed)
+	}
+}
+
+// Open returns the roots of the open projects, in tab order.
+func (s *Settings) Open() []string {
+	var roots []string
+	for _, p := range s.Projects {
+		if !p.Closed {
+			roots = append(roots, p.Path)
+		}
+	}
+	return roots
+}
+
+// Recent returns the roots of the closed projects, the last closed first.
+func (s *Settings) Recent() []string {
+	var roots []string
+	for _, p := range slices.Backward(s.Projects) {
+		if p.Closed {
+			roots = append(roots, p.Path)
+		}
+	}
+	return roots
+}
+
+// RemoveProject forgets root and its settings.
 func (s *Settings) RemoveProject(root string) {
 	s.Projects = slices.DeleteFunc(s.Projects, func(p ProjectSettings) bool { return samePath(p.Path, root) })
 }
@@ -272,16 +324,6 @@ func scopeSites(rows []siteRow, scope string) []siteRow {
 			out = append(out, r)
 		}
 	}
-	return out
-}
-
-// hosts returns the hosts of rows, sorted.
-func hosts(rows []siteRow) []string {
-	var out []string
-	for _, r := range rows {
-		out = append(out, r.host)
-	}
-	sort.Strings(out)
 	return out
 }
 

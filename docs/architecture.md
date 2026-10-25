@@ -111,6 +111,8 @@ hands it. Actions run the CLI's commands in process through `app.Execute`
 with a fresh `Runtime` whose working directory is the project, the arguments
 the CLI documents, non-terminal input (so commands never prompt) and output
 captured into the console; one command runs at a time and can be canceled.
+A deploy to several sites runs one `deploy upload` per site in turn: a failed
+site does not stop the rest, and canceling stops them all.
 Passwords go through `--password-stdin`. Reading data the views show (the
 manifest, `dist/`, saved sites) and creating a project use the shared
 services directly (`plugin`, `deploysites`). The view runs on the main

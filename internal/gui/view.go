@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -9,8 +10,9 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// view builds the window: the sidebar of projects, the selected page, and
-// the console of command output below it.
+// view builds the window: a tab for each open project with the pages of
+// sites and settings beside them, the selected page, and the console of
+// command output below it.
 func (a *App) view(c *ui.Context) {
 	a.drain()
 	for _, n := range a.notices {
@@ -22,57 +24,111 @@ func (a *App) view(c *ui.Context) {
 	}
 	a.notices = nil
 
-	t := c.Theme()
-	ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
-		ui.Column(c).Width(250).Background(t.Surface).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() {
-			a.sidebar(c)
-		})
-		ui.Column(c).Grow(1).Children(func() {
-			ui.SplitVerticalPercent(c, &a.consolePercent, func() {
-				ui.Column(c).Fill().Children(func() { a.page(c) })
-			}, func() {
-				a.consoleView(c)
-			}).Grow(1)
-		})
+	ui.Column(c).Fill().Children(func() {
+		a.tabBar(c)
+		ui.SplitVerticalPercent(c, &a.consolePercent, func() {
+			ui.Column(c).Fill().Children(func() { a.page(c) })
+		}, func() {
+			a.consoleView(c)
+		}).Grow(1)
 	})
 	a.dialogs(c)
 }
 
-func (a *App) sidebar(c *ui.Context) {
+// tabBar shows the open projects as tabs, a menu opening more, and the
+// buttons of the sites and settings pages.
+func (a *App) tabBar(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Padding(16, 16, 8).Gap(2).Children(func() {
-		ui.Text(c, "DLE Plugin").FontSize(17).Bold()
-		ui.Text(c, "Plugin projects").FontSize(12).TextColor(t.TextMuted)
+	ui.Row(c).Background(t.Surface).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Padding(6, 8, 0).Gap(8).AlignItems(ui.End).Children(func() {
+		ui.ScrollHorizontal(c).Grow(1).Shrink(1).Children(func() {
+			ui.Row(c).Gap(2).AlignItems(ui.End).Children(func() {
+				for _, root := range a.settings.Open() {
+					if pv := a.projects[root]; pv != nil {
+						a.projectTab(c, pv)
+					}
+				}
+				ui.MenuButton(c.Key("open-menu"), "Open", func(m *ui.Menu) {
+					if m.Item("Open plugin folder…").Chosen() {
+						a.chooseProject()
+					}
+					if m.Item("New plugin…").Chosen() {
+						a.openNewProject("")
+					}
+					if recent := a.settings.Recent(); len(recent) > 0 {
+						m.Separator()
+						for _, root := range recent {
+							if m.Item(root).Chosen() {
+								a.addProjectDir(root)
+							}
+						}
+					}
+				}).Tooltip("Open a plugin folder in a new tab").Margin(0, 0, 4, 4)
+			})
+		})
+		ui.Row(c).Gap(4).Padding(0, 0, 4).Children(func() {
+			a.pageTab(c, pageSites, "Sites", "Deployment sites of every project")
+			a.pageTab(c, pageSettings, "Settings", "")
+		})
 	})
-	selected := a.selected
-	if ui.Sidebar(c, &selected, func() {
-		ui.SidebarSection(c, "Projects", &a.open.projects, func() {
-			for _, ps := range a.settings.Projects {
-				pv := a.projects[ps.Path]
-				if pv == nil {
-					continue
-				}
-				item := ui.SidebarItem(c.Key(ps.Path), ps.Path, nil, pv.title())
-				if pv.err != nil {
-					item.Children(func() { ui.Badge(c, "!").Label("Error") })
-				}
-			}
-		})
-		ui.SidebarSection(c, "General", &a.open.general, func() {
-			ui.SidebarItem(c, pageSites, nil, "Global sites")
-			ui.SidebarItem(c, pageSettings, nil, "Settings")
-		})
-	}).Grow(1).Changed() {
-		a.selected = selected
+}
+
+// projectTab is the tab of an open project, with a button closing it.
+func (a *App) projectTab(c *ui.Context, pv *projectView) {
+	t := c.Theme()
+	on := a.selected == pv.root
+	tab := ui.ButtonBase(c.Key(pv.root)).Padding(6, 6, 6, 12).Gap(6).Radius(t.Radius, t.Radius, 0, 0).MaxWidth(240).
+		BorderWidth(1, 1, 0, 1).Label(pv.title()).Tooltip(pv.root)
+	if on {
+		tab.Background(t.Background).BorderColor(t.Border)
+	} else {
+		tab.BorderColor(ui.Color{}).TextColor(t.TextMuted)
+		if tab.Hovered() {
+			tab.Background(t.SurfaceHover)
+		}
 	}
-	ui.Column(c).Padding(12).Gap(8).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
-		if ui.PrimaryButton(c, "Add project…").Tooltip("Add an existing project folder").Clicked() {
-			a.chooseProject()
+	if tab.Clicked() {
+		a.show(pv.root)
+	}
+	tab.Children(func() {
+		title := ui.Text(c, pv.title()).SingleLine().Shrink(1)
+		if on {
+			title.FontWeight(600)
 		}
-		if ui.Button(c, "New project…").Tooltip("Create dleplugin.yml in a folder").Clicked() {
-			a.openNewProject("")
+		if pv.err != nil {
+			ui.Text(c, "!").TextColor(t.Danger).Bold()
+		}
+		closeTab := ui.ButtonBase(c.Key("close")).Size(18, 18).Radius(t.Radius).Label("Close " + pv.title()).Tooltip("Close the tab; the files stay")
+		if closeTab.Hovered() {
+			closeTab.Background(t.SurfacePressed)
+		}
+		closeTab.Children(func() { ui.Text(c, "×").FontSize(14).TextColor(t.TextMuted) })
+		if closeTab.Clicked() {
+			a.closeProject(pv.root)
 		}
 	})
+}
+
+// pageTab is a button showing a page that is not a project.
+func (a *App) pageTab(c *ui.Context, page, label, tooltip string) {
+	var b ui.Element
+	if a.selected == page {
+		b = ui.PrimaryButton(c.Key(page), label)
+	} else {
+		b = ui.Button(c.Key(page), label)
+	}
+	if tooltip != "" {
+		b.Tooltip(tooltip)
+	}
+	if b.Clicked() {
+		if a.selected == page {
+			// Back to the last project tab.
+			if open := a.settings.Open(); len(open) > 0 {
+				a.show(open[len(open)-1])
+				return
+			}
+		}
+		a.show(page)
+	}
 }
 
 func (a *App) page(c *ui.Context) {
@@ -93,16 +149,33 @@ func (a *App) page(c *ui.Context) {
 func (a *App) emptyPage(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Fill().Center().Gap(12).Children(func() {
-		ui.Text(c, "No project selected").FontSize(18).Bold()
-		ui.Text(c, "Add a folder with dleplugin.yml, or create a new plugin project.").TextColor(t.TextMuted)
+		ui.Text(c, "No plugin open").FontSize(18).Bold()
+		ui.Text(c, "Open a folder with dleplugin.yml, or create a new plugin project.").TextColor(t.TextMuted)
 		ui.Row(c).Gap(8).Children(func() {
-			if ui.PrimaryButton(c.Key("empty-add"), "Add project…").Clicked() {
+			if ui.PrimaryButton(c.Key("empty-add"), "Open plugin folder…").Clicked() {
 				a.chooseProject()
 			}
-			if ui.Button(c.Key("empty-new"), "New project…").Clicked() {
+			if ui.Button(c.Key("empty-new"), "New plugin…").Clicked() {
 				a.openNewProject("")
 			}
 		})
+		if recent := a.settings.Recent(); len(recent) > 0 {
+			ui.Column(c).Gap(4).Width(520).Padding(12, 0, 0).Children(func() {
+				ui.Text(c, "Recent").Bold()
+				home, _ := os.UserHomeDir()
+				for _, root := range recent {
+					ui.Row(c.Key(root)).Gap(8).Children(func() {
+						ui.Text(c, shortPath(root, home)).Grow(1).Shrink(1).SingleLine().Tooltip(root)
+						if ui.Button(c.Key("reopen"), "Open").Clicked() {
+							a.addProjectDir(root)
+						}
+						if ui.Button(c.Key("forget"), "Forget").Tooltip("Remove from the list; the files stay").Clicked() {
+							a.forgetProject(root)
+						}
+					})
+				}
+			})
+		}
 	})
 }
 

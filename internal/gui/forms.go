@@ -2,13 +2,14 @@ package gui
 
 import (
 	"errors"
+	"slices"
 	"strings"
 )
 
 // Forms hold what the user typed; args turns them into the CLI arguments of
 // the command they run, so the GUI does what the documented commands do.
 
-// buildForm is the Build tab.
+// buildForm holds the build options of a project.
 type buildForm struct {
 	version, upgradeURL string
 }
@@ -24,55 +25,89 @@ func (f *buildForm) args() []string {
 	return args
 }
 
-// customSite is the deploy target option for a site that is not saved.
-const customSite = "Other site…"
-
-// deployForm is the Deploy tab.
+// deployForm is the deploy dialog of a project: the plugin to upload and
+// the saved sites it goes to.
 type deployForm struct {
-	// site is a saved host, or customSite for target and login.
-	site          string
-	target, login string
+	// sites are the chosen hosts.
+	sites []string
+	// passwords are typed for chosen sites without a saved password, by
+	// passwordKey, so that a password never goes to another login.
+	passwords map[string]string
+	remember  bool
 	// source is 0 to build the project, 1 to upload file.
 	source              int
 	file                string
 	version, upgradeURL string
-	password            string
-	remember            bool
 	allowNew, dryRun    bool
 	insecure            bool
 }
 
-func (f *deployForm) custom() bool { return f.site == customSite }
+func passwordKey(r siteRow) string { return r.site.Login + "@" + r.host }
 
-// validate reports what is missing before an upload; sites are the saved
-// ones.
-func (f *deployForm) validate(sites []siteRow) error {
+// needsPassword reports whether an upload to r has no password but the
+// one typed in the dialog.
+func needsPassword(r siteRow) bool {
+	return r.password != passwordEnv && r.password != passwordStored
+}
+
+func (f *deployForm) chosen(host string) bool { return slices.Contains(f.sites, host) }
+
+// choose adds host to the chosen sites or removes it, with its password.
+func (f *deployForm) choose(r siteRow, on bool) {
+	f.sites = slices.DeleteFunc(f.sites, func(h string) bool { return h == r.host })
+	if on {
+		f.sites = append(f.sites, r.host)
+	} else {
+		delete(f.passwords, passwordKey(r))
+	}
+}
+
+func (f *deployForm) password(r siteRow) string { return f.passwords[passwordKey(r)] }
+
+func (f *deployForm) setPassword(r siteRow, p string) {
+	if f.passwords == nil {
+		f.passwords = map[string]string{}
+	}
+	f.passwords[passwordKey(r)] = p
+}
+
+// clearPasswords forgets the typed passwords.
+func (f *deployForm) clearPasswords() { f.passwords, f.remember = nil, false }
+
+// targets returns the chosen sites that are still saved, in the order of
+// rows.
+func (f *deployForm) targets(rows []siteRow) []siteRow {
+	var out []siteRow
+	for _, r := range rows {
+		if f.chosen(r.host) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// validate reports what is missing before an upload; rows are the saved
+// sites.
+func (f *deployForm) validate(rows []siteRow) error {
+	targets := f.targets(rows)
 	switch {
-	case f.site == "":
-		return errors.New("Choose a site.")
-	case f.custom() && strings.TrimSpace(f.target) == "":
-		return errors.New("Enter the site host or admin URL.")
-	case f.custom() && strings.TrimSpace(f.login) == "":
-		return errors.New("Enter the admin login.")
+	case len(targets) == 0:
+		return errors.New("Choose at least one site.")
 	case f.source == 1 && strings.TrimSpace(f.file) == "":
 		return errors.New("Choose a plugin file.")
 	}
-	if !f.custom() {
-		if _, ok := findSite(sites, f.site); !ok {
-			return errors.New("The chosen site is no longer saved.")
+	for _, r := range targets {
+		if needsPassword(r) && f.password(r) == "" {
+			return errors.New("Enter the password for " + passwordKey(r) + ".")
 		}
 	}
 	return nil
 }
 
-// args returns the arguments of deploy upload and its standard input.
-func (f *deployForm) args() ([]string, string) {
-	args := []string{"deploy", "upload"}
-	if f.custom() {
-		args = append(args, strings.TrimSpace(f.target), "--login", strings.TrimSpace(f.login))
-	} else {
-		args = append(args, f.site)
-	}
+// args returns the arguments of deploy upload to the saved site r and its
+// standard input.
+func (f *deployForm) args(r siteRow) ([]string, string) {
+	args := []string{"deploy", "upload", r.host}
 	if f.source == 1 {
 		args = append(args, "--file", strings.TrimSpace(f.file))
 	} else {
@@ -83,10 +118,9 @@ func (f *deployForm) args() ([]string, string) {
 			args = append(args, "--upgrade-url", u)
 		}
 	}
-	stdin := ""
-	if f.password != "" {
+	stdin := f.password(r)
+	if stdin != "" {
 		args = append(args, "--password-stdin")
-		stdin = f.password
 	}
 	if f.allowNew {
 		args = append(args, "--new")

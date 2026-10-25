@@ -18,15 +18,6 @@ func (a *App) dialogs(c *ui.Context) {
 			a.openNewProject(a.initAskDir)
 		}
 	}
-	if a.removeAsk {
-		if pv := a.current(); pv != nil {
-			if ui.AlertDialog(c, &a.removeAsk, "Remove “"+pv.title()+"”?", "The project leaves the list; its files stay in "+pv.root+".", "Cancel", "Remove") == 1 {
-				a.removeProject(pv.root)
-			}
-		} else {
-			a.removeAsk = false
-		}
-	}
 	if a.siteRemove {
 		r := a.siteRemoved
 		if ui.AlertDialog(c, &a.siteRemove, "Remove "+r.host+"?", "The site is removed from "+r.path+", with its saved password.", "Cancel", "Remove") == 1 {
@@ -36,6 +27,15 @@ func (a *App) dialogs(c *ui.Context) {
 	ui.Modal(c, &a.initOpen, func() { a.initDialog(c) }).Width(460)
 	if ui.Modal(c, &a.siteOpen, func() { a.siteDialog(c) }).Width(480).Dismissed() && a.busy() {
 		a.cancelJob()
+	}
+	// The deploy dialog gives way to the site dialog it opened, and comes
+	// back when that closes.
+	if a.siteReturn && !a.siteOpen {
+		a.siteReturn = false
+		a.deployOpen = a.projects[a.deployRoot] != nil
+	}
+	if ui.Modal(c, &a.deployOpen, func() { a.deployDialog(c) }).Width(560).Dismissed() {
+		a.closeDeploy()
 	}
 }
 

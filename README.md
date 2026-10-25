@@ -335,18 +335,21 @@ dleplugin hosts list
 ## Desktop app
 
 `dleplugin-gui` is a desktop app over the same commands, with native UI drawn
-by [MyGo](https://github.com/egoist/mygo) (no webview, no JavaScript). It
-keeps a list of plugin project folders and, for each, shows the manifest and
-the built artifacts and runs `build`, `deploy upload`, `deploy sites
-add/edit/remove`, `static`, `test` and `check` with the values of its forms.
-New projects are created as `init` does; global sites have a page of their own.
+by [MyGo](https://github.com/egoist/mygo) (no webview, no JavaScript). Each
+open plugin folder is a tab showing the manifest and the built artifacts, with
+Build and Deploy buttons: Deploy opens a dialog to choose saved sites and runs
+`deploy upload` for each of them in turn. Sites are added, edited and removed
+(`deploy sites add/edit/remove`) on the Sites page, for every project, and on
+a project's Sites tab; the Checks tab runs `static`, `test` and `check`.
+New projects are created as `init` does; closed tabs are offered to open again.
 Commands run in process with the documented flags, so they behave as in the
 CLI; their output goes to the window's console, where a running command can be
 canceled. Passwords typed in the app go to the commands through stdin, never
 on a command line, and may be saved where the CLI saves them (the OS
 credential store or `credentials.yaml`, per `DLEPLUGIN_CREDENTIAL_STORE`).
 
-The project list and the forms' saved values live in `gui.yaml` next to the
+The open tabs, the projects closed and the forms' saved values (such as the
+sites last chosen for deploy) live in `gui.yaml` next to the
 global config. The CLI binary does not include the GUI toolkit. On Linux the
 app needs GTK 3; it builds without cgo for Linux, macOS and Windows.
 
