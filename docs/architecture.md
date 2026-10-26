@@ -63,13 +63,12 @@ internal/modules/check/internal/check/
                            file patches vs DLE directories: whitespace- and
                            case-insensitive search, missing files, duplicates
 internal/modules/hosts/    the hosts module: hosts up/down/compose/list/add/
-                           remove/protect/path/port/versions/config
+                           remove/path/port/versions/config
 internal/modules/hosts/internal/stack/
                            Docker stack: embedded files, .env, docker compose,
                            temporary installer container
 internal/modules/hosts/internal/host/
-                           hosts registry, add/remove, vhosts, protect form
-                           and passwords, HTTP port
+                           hosts registry, add/remove, vhosts, HTTP port
 internal/modules/hosts/internal/dist/
                            clean DLE distributions: inspect, resolve, extract
 internal/modules/hosts/internal/hostconfig/

@@ -6,9 +6,6 @@ x-php: &php
     - ./www:/var/www   # the path must match apache
     - ./config/php/php.ini:/usr/local/etc/php/conf.d/zz-custom.ini:ro
     - ./config/php/fpm.conf:/usr/local/etc/php-fpm.d/zz-custom.conf:ro
-    - ./gate:/opt/dlehost/gate:ro         # hosts protect login form
-    - ./data/gate:/var/lib/dlehost/gate   # its sessions
-    - ./data/protect:/opt/dlehost/protect:ro # protect bcrypt hashes
   environment:
     DB_HOST: db
     DB_NAME: ${DB_NAME}
@@ -31,10 +28,7 @@ services:
       - ./www:/var/www                                   # site files
       - ./config/apache/sites:/etc/apache2/sites-enabled # virtual hosts
       - ./logs/apache:/var/log/apache2
-      - ./gate:/opt/dlehost/gate:ro                      # hosts protect login form
-      - ./data/gate:/var/lib/dlehost/gate:ro             # its sessions (check only)
     environment:
-      TZ: UTC # the session expiry is compared with %{TIME}; the form writes it in UTC
     depends_on: [php85, php74]
 
   php85:

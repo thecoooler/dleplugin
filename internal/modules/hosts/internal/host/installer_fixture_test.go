@@ -67,7 +67,7 @@ func serveTestInstaller(t *testing.T, s *stack.Stack) {
 	t.Setenv("DLEHOST_TEST_INSTALL_ADDRESS", strings.TrimPrefix(server.URL, "http://"))
 }
 
-// Minimal web installer for gate integration fixtures. The production installer
+// Minimal web installer for host integration fixtures. The production installer
 // client drives it via HTTP; it creates its schema/user instead of importing SQL.
 const testInstallerPHP = `<?php
 session_start();

@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -29,10 +28,6 @@ type Config struct {
 	DefaultSiteOffline bool     `yaml:"default_site_offline"`
 	DefaultPHP         string   `yaml:"default_php"`
 	PHPVersions        []string `yaml:"php_versions"`
-	// Protect enables the password login form for hosts in the default mode.
-	Protect bool `yaml:"protect,omitempty"`
-	// ProtectSessionTTL is the login form session lifetime; empty or never means no expiry.
-	ProtectSessionTTL string `yaml:"protect_session_ttl,omitempty"`
 }
 
 // Key is a config key available through dleplugin hosts config.
@@ -130,46 +125,6 @@ var Keys = map[string]Key{
 				c.DefaultSiteOffline = false
 			default:
 				return fmt.Errorf("default_site_offline: use on or off")
-			}
-			return nil
-		},
-	},
-	"protect": {
-		Help: "password login form for hosts in the default mode: on or off (default off)",
-		Get: func(c *Config) string {
-			if c.Protect {
-				return "on"
-			}
-			return "off"
-		},
-		Set: func(c *Config, v string) error {
-			switch v {
-			case "on":
-				c.Protect = true
-			case "off", "":
-				c.Protect = false
-			default:
-				return fmt.Errorf("protect: use on or off")
-			}
-			return nil
-		},
-	},
-	"protect_session_ttl": {
-		Help: "login form session lifetime: never (default, no server-side expiry) or 30d, 12h, 90m",
-		Get: func(c *Config) string {
-			if c.SessionTTL() == 0 {
-				return "never"
-			}
-			return c.ProtectSessionTTL
-		},
-		Set: func(c *Config, v string) error {
-			ttl, err := ParseSessionTTL(v)
-			if err != nil {
-				return err
-			}
-			c.ProtectSessionTTL = v
-			if ttl == 0 {
-				c.ProtectSessionTTL = ""
 			}
 			return nil
 		},
@@ -345,49 +300,12 @@ func validateOrigin(origin string) error {
 	return nil
 }
 
-// ParseSessionTTL parses the login form session lifetime: "", 0, never or
-// unlimited mean no server-side expiry; otherwise Nd (days) or a Go duration
-// (12h, 90m) from one minute to 100 years.
-func ParseSessionTTL(v string) (time.Duration, error) {
-	switch v {
-	case "", "0", "never", "unlimited":
-		return 0, nil
-	}
-	var ttl time.Duration
-	var err error
-	if days, ok := strings.CutSuffix(v, "d"); ok {
-		var n int
-		if n, err = strconv.Atoi(days); err == nil {
-			ttl = time.Duration(n) * 24 * time.Hour
-			if n > 36500 {
-				ttl = -1
-			}
-		}
-	} else {
-		ttl, err = time.ParseDuration(v)
-	}
-	if err != nil || ttl < time.Minute || ttl > 36500*24*time.Hour {
-		return 0, fmt.Errorf("protect_session_ttl %q: expected never or a lifetime from 1m to 36500d, e.g. 30d, 12h, 90m", v)
-	}
-	return ttl, nil
-}
-
-// SessionTTL is the login form session lifetime; 0 means no server-side
-// expiry. The value is checked by Validate.
-func (c *Config) SessionTTL() time.Duration {
-	ttl, _ := ParseSessionTTL(c.ProtectSessionTTL)
-	return ttl
-}
-
 // Validate checks the values, including after manual YAML edits.
 func (c *Config) Validate() error {
 	if err := ValidateAdminPath(c.AdminPath()); err != nil {
 		return fmt.Errorf("default_admin_path: %w", err)
 	}
 	if err := validateDomain(c.BaseDomain); err != nil {
-		return err
-	}
-	if _, err := ParseSessionTTL(c.ProtectSessionTTL); err != nil {
 		return err
 	}
 	return validateOrigin(c.ExternalOrigin)

@@ -35,17 +35,13 @@ func TestInstallerDocker(t *testing.T) {
 	}
 	for _, external := range []bool{false, true} {
 		name := "clean"
-		protect := "off"
 		if external {
-			name, protect = "secure", "on"
+			name = "external"
 			s.BaseDomain, s.ExternalOrigin = "installer.test", "https://installer.test"
-			if err := SetPassword(s, "", []byte("gate-test-password"), false, ProtectSettings{}, func(string) {}); err != nil {
-				t.Fatal(err)
-			}
 		}
 		t.Run(name, func(t *testing.T) {
 			result, err := Add(s, AddOptions{Name: name, DLE: "21.0", PHP: "8.5", PHPVersions: []string{"8.5"},
-				DistsDir: dists, Admin: Credentials{"owner", "installer-test-password"}, Protect: protect}, func(msg string) { t.Log(msg) })
+				DistsDir: dists, Admin: Credentials{"owner", "installer-test-password"}}, func(msg string) { t.Log(msg) })
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -81,36 +77,25 @@ echo 'verified';
 			if err := s.Compose(strings.NewReader(check), "exec", "-T", "php85", "php"); err != nil {
 				t.Fatal(err)
 			}
-			client := &gateClient{t: t, base: "http://127.0.0.1:" + s.HTTPPort(), http: &http.Client{Timeout: 20 * time.Second,
+			client := &testHTTPClient{t: t, base: "http://127.0.0.1:" + s.HTTPPort(), http: &http.Client{Timeout: 20 * time.Second,
 				CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
-			if external {
-				if err := SetSetting(s, name, "admin_path", "control-test.php"); err != nil {
-					t.Fatal(err)
-				}
-				client.expectGate(result.Host.Domain(), "/control-test.php")
-				if err := SetSetting(s, name, "admin_path", "admin.php"); err != nil {
-					t.Fatal(err)
-				}
-				client.expectGate(result.Host.Domain(), "/")
-			} else {
-				resp := client.do(result.Host.Domain(), "GET", "/", nil, nil)
-				if resp.code != 503 || !strings.Contains(resp.body, "Сайт находится на текущей реконструкции") {
-					t.Fatalf("offline site: HTTP %d %.500s", resp.code, resp.body)
-				}
-				if err := SetSetting(s, name, "site_offline", "off"); err != nil {
-					t.Fatal(err)
-				}
-				resp = client.do(result.Host.Domain(), "GET", "/", nil, nil)
-				if resp.code != 200 || strings.Contains(resp.body, "Сайт находится на текущей реконструкции") {
-					t.Fatalf("enabled site: HTTP %d %.500s", resp.code, resp.body)
-				}
-				if err := SetSetting(s, name, "site_offline", "on"); err != nil {
-					t.Fatal(err)
-				}
-				resp = client.do(result.Host.Domain(), "GET", "/", nil, nil)
-				if resp.code != 503 || !strings.Contains(resp.body, "Сайт находится на текущей реконструкции") {
-					t.Fatalf("disabled site: HTTP %d %.500s", resp.code, resp.body)
-				}
+			resp := client.do(result.Host.Domain(), "GET", "/", nil, nil)
+			if resp.code != 503 || !strings.Contains(resp.body, "Сайт находится на текущей реконструкции") {
+				t.Fatalf("offline site: HTTP %d %.500s", resp.code, resp.body)
+			}
+			if err := SetSetting(s, name, "site_offline", "off"); err != nil {
+				t.Fatal(err)
+			}
+			resp = client.do(result.Host.Domain(), "GET", "/", nil, nil)
+			if resp.code != 200 || strings.Contains(resp.body, "Сайт находится на текущей реконструкции") {
+				t.Fatalf("enabled site: HTTP %d %.500s", resp.code, resp.body)
+			}
+			if err := SetSetting(s, name, "site_offline", "on"); err != nil {
+				t.Fatal(err)
+			}
+			resp = client.do(result.Host.Domain(), "GET", "/", nil, nil)
+			if resp.code != 503 || !strings.Contains(resp.body, "Сайт находится на текущей реконструкции") {
+				t.Fatalf("disabled site: HTTP %d %.500s", resp.code, resp.body)
 			}
 		})
 	}

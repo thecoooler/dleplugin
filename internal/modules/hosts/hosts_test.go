@@ -1,7 +1,6 @@
 package hosts
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/host"
 	config "github.com/thecoooler/dleplugin/internal/modules/hosts/internal/hostconfig"
 	"github.com/thecoooler/dleplugin/internal/modules/moduletest"
 )
@@ -24,7 +22,7 @@ func run(t *testing.T, stdin string, args ...string) (int, string) {
 }
 
 func TestHelp(t *testing.T) {
-	for _, sub := range []string{"", "up", "down", "compose", "list", "add", "remove", "protect", "get", "set", "path", "port", "versions", "config", "config set"} {
+	for _, sub := range []string{"", "up", "down", "compose", "list", "add", "remove", "get", "set", "path", "port", "versions", "config", "config set"} {
 		args := append(strings.Fields(sub), "--help")
 		if sub == "compose" {
 			continue // flags go to docker compose
@@ -136,84 +134,6 @@ func TestOpenStackRouting(t *testing.T) {
 	}
 	if got := s.HostURL(s.Domain("shop")); got != "https://shop.dle.icooler.opik.net/" {
 		t.Fatalf("URL=%s", got)
-	}
-}
-
-func TestProtectArgumentsValidatedBeforeStack(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "stack")
-	t.Setenv("DLEHOST_DIR", dir)
-	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
-	for _, args := range [][]string{{"protect", "shop"}, {"protect", "yes"}, {"protect", "shop", "maybe"}, {"add", "shop", "--protect", "yes"}, {"config", "set", "protect_session_ttl", "5x"}} {
-		if code, _ := run(t, "", args...); code == 0 {
-			t.Errorf("%v accepted", args)
-		}
-	}
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		t.Fatal("invalid arguments prepared the stack")
-	}
-}
-
-func TestProtectState(t *testing.T) {
-	for _, tc := range []struct {
-		protect string
-		global  bool
-		want    string
-	}{{"", false, "off (default)"}, {"", true, "on (default)"}, {"on", false, "on"}, {"off", true, "off"}} {
-		if got := protectState(host.Host{Protect: tc.protect}, tc.global); got != tc.want {
-			t.Errorf("%q/%v: %s", tc.protect, tc.global, got)
-		}
-	}
-}
-
-func TestReadProtectPassword(t *testing.T) {
-	for _, tc := range []struct {
-		in, want string
-		valid    bool
-	}{
-		{"secret\n", "secret", true}, {"secret\r\n", "secret", true}, {" secret ", " secret ", true},
-		{"pässwörd\n", "pässwörd", true}, {strings.Repeat("a", 72) + "\r\n", strings.Repeat("a", 72), true},
-		{"", "", false}, {"\n", "", false}, {"a\nb\n", "", false}, {"a\x00b", "", false}, {strings.Repeat("a", 73), "", false},
-	} {
-		got, err := readProtectPassword(strings.NewReader(tc.in), io.Discard)
-		if (err == nil) != tc.valid || tc.valid && string(got) != tc.want {
-			t.Errorf("input length %d: valid %v, got length %d, error %v", len(tc.in), tc.valid, len(got), err)
-		}
-	}
-}
-
-func TestProtectPasswordCLI(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("DLEHOST_DIR", dir)
-	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
-	cli := func(args ...string) (int, string) { return run(t, "cli-secret\n", args...) }
-	if code, out := cli("protect", "on"); code == 0 || !strings.Contains(out, "no global password") {
-		t.Fatalf("enable without password: %d %s", code, out)
-	}
-	if code, _ := cli("protect", "password", "--default"); code == 0 {
-		t.Fatal("accepted global --default")
-	}
-	if code, _ := cli("protect", "password", "cli-secret"); code == 0 {
-		t.Fatal("accepted positional password")
-	}
-	if code, out := cli("protect", "password"); code != 0 {
-		t.Fatal(out)
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "data", "protect", "passwords.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), "cli-secret") || !strings.Contains(string(data), "$2a$10$") {
-		t.Fatal("CLI did not store only bcrypt hash")
-	}
-	if code, out := cli("protect", "on"); code != 0 {
-		t.Fatal(out)
-	}
-	cfg, err := config.Load()
-	if err != nil || !cfg.Protect {
-		t.Fatal("global protect not persisted")
-	}
-	if code, out := cli("protect"); code != 0 {
-		t.Fatal(out)
 	}
 }
 
