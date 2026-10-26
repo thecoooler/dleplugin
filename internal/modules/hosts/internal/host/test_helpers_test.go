@@ -122,7 +122,7 @@ func fakeDocker(t *testing.T) (calls, fail string) {
 	bin := t.TempDir()
 	calls, fail = filepath.Join(bin, "calls"), filepath.Join(bin, "fail")
 	script := "#!/bin/sh\n" + fakeInstallerPort + "in=$(cat)\necho \"$* $in\" >> " + calls + "\n" +
-		"case \"$*\" in *graceful*) if [ -n \"$DLEHOST_TEST_WATCH\" ] && [ -e \"$DLEHOST_TEST_WATCH\" ]; then echo published-before-reload >> " + calls + "; fi;; esac\n" +
+		"case \"$*\" in *graceful*) if [ -n \"$DLEPLUGIN_HOSTS_TEST_WATCH\" ] && [ -e \"$DLEPLUGIN_HOSTS_TEST_WATCH\" ]; then echo published-before-reload >> " + calls + "; fi;; esac\n" +
 		"if [ -s " + fail + " ]; then pat=$(cat " + fail + "); case \"$* $in\" in *\"$pat\"*) exit 1;; esac; fi\nexit 0\n"
 	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
