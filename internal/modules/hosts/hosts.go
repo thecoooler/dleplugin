@@ -50,7 +50,7 @@ stack lives in ~/.local/share/dlehost (DLEHOST_DIR or project_dir).`,
 		Args: cobra.NoArgs,
 	}
 	cmd.AddCommand(upCmd(rt), downCmd(rt), composeCmd(rt), listCmd(rt), addCmd(rt), removeCmd(rt),
-		protectCmd(rt), pathCmd(rt), portCmd(rt), versionsCmd(rt), configCmd(rt))
+		protectCmd(rt), getCmd(rt), setCmd(rt), pathCmd(rt), portCmd(rt), versionsCmd(rt), configCmd(rt))
 	return cmd
 }
 
@@ -264,7 +264,7 @@ func listCmd(rt *app.Runtime) *cobra.Command {
 }
 
 func addCmd(rt *app.Runtime) *cobra.Command {
-	var dle, distArchive, php, adminLogin, adminPassword, protect string
+	var dle, distArchive, php, adminLogin, adminPassword, protect, siteOffline string
 	cmd := &cobra.Command{
 		Use:   "add NAME",
 		Short: "Create the host NAME.<base_domain> with DLE",
@@ -283,6 +283,11 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 			if _, err := host.ParseProtect(protect); err != nil {
 				return err
 			}
+			if cmd.Flags().Changed("site-offline") {
+				if err := host.ValidateSetting("site_offline", siteOffline); err != nil {
+					return err
+				}
+			}
 			cfg, s, err := env(rt)
 			if err != nil {
 				return err
@@ -300,6 +305,9 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 			if dle == "" && distArchive == "" {
 				return fmt.Errorf("specify --dle, --dist or set default_dle (list: dleplugin hosts versions)")
 			}
+			if !cmd.Flags().Changed("site-offline") {
+				siteOffline = config.Keys["default_site_offline"].Get(cfg)
+			}
 			res, err := host.Add(s, host.AddOptions{
 				Context:     cmd.Context(),
 				Name:        args[0],
@@ -310,6 +318,7 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 				PHPVersions: cfg.PHPVersions,
 				DistsDir:    cfg.DistsDir,
 				Admin:       credentials,
+				SiteOffline: siteOffline,
 				Protect:     protect,
 				Settings:    protectSettings(cfg),
 			}, stepper(rt))
@@ -322,6 +331,7 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 			rt.UI.Info("Admin:    " + res.URL + "admin.php")
 			rt.UI.Info("Login:    " + credentials.Login)
 			rt.UI.Info("Protect:  " + protectState(res.Host, cfg.Protect))
+			rt.UI.Info("Offline:  " + siteOffline)
 			rt.UI.Info("Database: " + res.Host.Database)
 			rt.UI.Info("Files:    " + s.HostDir(res.Host.Name))
 			return nil
@@ -333,7 +343,58 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 	cmd.Flags().StringVar(&adminLogin, "admin-login", "admin", "administrator login (DLEHOST_ADMIN_LOGIN)")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "administrator password (DLEHOST_ADMIN_PASSWORD)")
 	cmd.Flags().StringVar(&protect, "protect", host.ProtectDefault, "login form in front of the site: default (global setting), on, off")
+	cmd.Flags().StringVar(&siteOffline, "site-offline", "", "DLE maintenance mode: on (site closed) or off (site open); default: default_site_offline (on)")
 	return cmd
+}
+
+func getCmd(rt *app.Runtime) *cobra.Command {
+	return &cobra.Command{
+		Use:     "get NAME KEY",
+		Short:   "Read a host setting from DLE",
+		Long:    "Read a host setting from DLE. Available keys: site_offline (on: site closed, off: site open).",
+		Example: "  dleplugin hosts get shop site_offline",
+		Args:    cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Validate the key before preparing the stack.
+			if err := host.ValidateSettingKey(args[1]); err != nil {
+				return err
+			}
+			_, s, err := env(rt)
+			if err != nil {
+				return err
+			}
+			value, err := host.GetSetting(s, args[0], args[1])
+			if err != nil {
+				return err
+			}
+			rt.UI.Info(value)
+			return nil
+		},
+	}
+}
+
+func setCmd(rt *app.Runtime) *cobra.Command {
+	return &cobra.Command{
+		Use:     "set NAME KEY VALUE",
+		Short:   "Change a host setting in DLE",
+		Long:    "Change a host setting in DLE. Available keys: site_offline (on: site closed, off: site open).\nAdministrators retain access while the site is closed.",
+		Example: "  dleplugin hosts set shop site_offline on\n  dleplugin hosts set shop site_offline off",
+		Args:    cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := host.ValidateSetting(args[1], args[2]); err != nil {
+				return err
+			}
+			_, s, err := env(rt)
+			if err != nil {
+				return err
+			}
+			if err := host.SetSetting(s, args[0], args[1], args[2]); err != nil {
+				return err
+			}
+			rt.UI.Successf("Host %s: %s = %s", args[0], args[1], args[2])
+			return nil
+		},
+	}
 }
 
 func removeCmd(rt *app.Runtime) *cobra.Command {

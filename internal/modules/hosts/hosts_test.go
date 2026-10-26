@@ -24,7 +24,7 @@ func run(t *testing.T, stdin string, args ...string) (int, string) {
 }
 
 func TestHelp(t *testing.T) {
-	for _, sub := range []string{"", "up", "down", "compose", "list", "add", "remove", "protect", "path", "port", "versions", "config", "config set"} {
+	for _, sub := range []string{"", "up", "down", "compose", "list", "add", "remove", "protect", "get", "set", "path", "port", "versions", "config", "config set"} {
 		args := append(strings.Fields(sub), "--help")
 		if sub == "compose" {
 			continue // flags go to docker compose
@@ -58,6 +58,46 @@ func TestCredentialPrecedence(t *testing.T) {
 	}
 	if got := credentialValue(cmd, "admin-login", "", variable); got != "" {
 		t.Fatal("explicit empty flag must reach validation")
+	}
+}
+
+func TestHostSettingsCLI(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DLEHOST_DIR", dir)
+	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	path := filepath.Join(dir, "www/shop/engine/data/config.php")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("<?php $config = array('site_offline' => '0');"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"on", "off"} {
+		if code, msg := run(t, "", "set", "shop", "site_offline", value); code != 0 {
+			t.Fatalf("set %s: %s", value, msg)
+		}
+		e := moduletest.NewEnv(t, "", Module())
+		if code := e.Run("hosts", "get", "shop", "site_offline"); code != 0 || strings.TrimSpace(e.Out.String()) != value {
+			t.Fatalf("get: %s %s", e.Out.String(), e.ErrB.String())
+		}
+	}
+}
+
+func TestHostSettingsArgumentsValidatedBeforeStack(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "stack")
+	t.Setenv("DLEHOST_DIR", dir)
+	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	for _, args := range [][]string{
+		{"get", "shop", "unknown"}, {"set", "shop", "unknown", "on"},
+		{"set", "shop", "site_offline", "yes"}, {"set", "shop", "site_offline", ""},
+		{"add", "shop", "--site-offline", "yes"}, {"add", "shop", "--site-offline="},
+	} {
+		if code, _ := run(t, "", args...); code == 0 {
+			t.Errorf("accepted %v", args)
+		}
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatal("invalid arguments prepared the stack")
 	}
 }
 

@@ -17,6 +17,10 @@ dleplugin hosts config show
 dleplugin hosts versions                           # DLE (from dists_dir) and PHP versions
 dleplugin hosts add shop --dle 21.0                # http://shop.localhost/
 dleplugin hosts add shop2 --admin-login owner --admin-password secret
+dleplugin hosts add public --site-offline off       # create an open site
+dleplugin hosts get shop site_offline               # on: closed, off: open
+dleplugin hosts set shop site_offline off           # open an existing site
+dleplugin hosts set shop site_offline on            # close an existing site
 dleplugin hosts protect password                   # set the shared login form password
 dleplugin hosts add stage --protect on             # site only after the protect password
 dleplugin hosts protect shop on                    # login form for an existing host
@@ -57,7 +61,7 @@ work from any directory.
 ## Where things are stored
 
 - Hosts config: `~/.config/dlehost/config.yml` (overridden by `DLEHOST_CONFIG`).
-  Keys: `dists_dir`, `default_dle`, `default_php`, `php_versions`,
+  Keys: `dists_dir`, `default_dle`, `default_php`, `default_site_offline`, `php_versions`,
   `project_dir`, `base_domain`, `external_origin`, `protect`,
   `protect_session_ttl` (see `dleplugin hosts config --help`).
 - Stack: `~/.local/share/dlehost` (`$XDG_DATA_HOME/dlehost`, or `project_dir`,
@@ -143,7 +147,9 @@ and the removal of `install.php` are checked; the container is removed. Apache
 gets an already installed site, also with `--protect on`. The domain and
 scheme are passed to the installer, so URLs in the config and demo banners
 match the final address. After installation `allow_alt_url` is enabled for
-Apache. DLE 11.0–14.2 do not remove `install.php` themselves, so the CLI does;
+Apache. New sites are closed using DLE's maintenance mode before they are
+published (see below). DLE 11.0–14.2 do not remove `install.php` themselves,
+so the CLI does;
 14.3+ remove it themselves. The remaining template archive is removed by the
 CLI. The administrator email is `admin@example.com`. The stack must be running
 (`dleplugin hosts up`).
@@ -159,6 +165,40 @@ needs 7.2+, 14.3 needs 7.0+, 12.1–14.2 need 5.4+, 11.2–12.0 need 5.3.7+,
 11.0–11.1 need 5.3+). Running old DLE on a new PHP is not supported.
 
 On error everything created is rolled back.
+
+### Site maintenance mode and host settings
+
+New hosts default to `site_offline = 1` in `engine/data/config.php`. Guests
+see DLE's maintenance page; administrators and groups with DLE's offline
+access permission retain access. The separate `hosts protect` login form
+continues to apply when enabled.
+
+```sh
+dleplugin hosts config get default_site_offline    # on by default (site closed)
+dleplugin hosts config set default_site_offline off # create open sites by default
+dleplugin hosts config unset default_site_offline  # restore the default: on
+dleplugin hosts add private --site-offline on       # override the default: closed
+dleplugin hosts add public --site-offline off       # override the default: open
+
+dleplugin hosts get shop site_offline               # read the current DLE value
+dleplugin hosts set shop site_offline on            # close the site
+dleplugin hosts set shop site_offline off           # open the site
+```
+
+`default_site_offline` affects new hosts only, including when an existing
+hosts config does not yet contain this key. `--site-offline on|off` takes
+precedence over the configured default.
+
+`hosts get NAME KEY` and `hosts set NAME KEY VALUE` read and update the host's
+DLE configuration directly, so changes from the DLE admin UI are visible.
+They also work for DLE directories under `www/` that were not created by
+`hosts add`. Currently the supported key is `site_offline`, with values
+`on` (closed) and `off` (open); unknown keys and values are rejected. No Docker
+restart is required. Missing, invalid or duplicate settings are reported as
+errors without rewriting the configuration. Additional host settings can
+be added to these commands in the future.
+
+### Administrator credentials
 
 The administrator login and password come from `--admin-login`,
 `--admin-password`, or `DLEHOST_ADMIN_LOGIN`, `DLEHOST_ADMIN_PASSWORD`. For
