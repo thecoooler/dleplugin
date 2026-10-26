@@ -1,5 +1,6 @@
 // Package dockerimg builds tool images from embedded Dockerfiles. The tag is
 // derived from every build-context input so dependency changes yield a new image.
+// Images published under the same tag in Registry are pulled instead of built.
 package dockerimg
 
 import (
@@ -10,11 +11,24 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/thecoooler/dleplugin/internal/process"
 )
+
+// Registry holds the prebuilt tool images published by CI.
+const Registry = "ghcr.io/thecoooler"
+
+// RegistryEnv overrides Registry; an empty value disables pulling.
+const RegistryEnv = "DLEPLUGIN_IMAGE_REGISTRY"
+
+// pullTimeout limits a pull before Ensure falls back to building.
+var pullTimeout = 10 * time.Minute
 
 // Image is a tool image built from an embedded Dockerfile.
 type Image struct {
@@ -36,6 +50,37 @@ func (i Image) Tag() string {
 		h.Write(i.Files[name])
 	}
 	return i.Name + ":" + hex.EncodeToString(h.Sum(nil))[:12]
+}
+
+// Remote returns the registry reference of the tag, or "" when pulling is
+// disabled.
+func (i Image) Remote() string {
+	registry, ok := os.LookupEnv(RegistryEnv)
+	if !ok {
+		registry = Registry
+	}
+	registry = strings.TrimRight(registry, "/")
+	if registry == "" {
+		return ""
+	}
+	return registry + "/" + i.Tag()
+}
+
+// WriteContext writes the build context files into dir.
+func (i Image) WriteContext(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	files := map[string][]byte{"Dockerfile": i.Dockerfile}
+	for name, data := range i.Files {
+		files[name] = data
+	}
+	for name, data := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (i Image) fileNames() []string {
@@ -77,8 +122,10 @@ func CheckDocker() error {
 	return nil
 }
 
-// Ensure builds the image unless it exists and returns its tag. stream shows
-// the build output; notify (may be nil) receives progress messages.
+// Ensure returns the tag of the image: an existing local image, the image
+// pulled from the registry (tagged locally), or a local build when the pull
+// fails. stream shows the pull and build output; notify (may be nil) receives
+// progress messages.
 func Ensure(ctx context.Context, runner *process.Runner, img Image, stream bool, notify func(string)) (string, error) {
 	if err := CheckDocker(); err != nil {
 		return "", err
@@ -94,6 +141,9 @@ func Ensure(ctx context.Context, runner *process.Runner, img Image, stream bool,
 	var ee *process.ExitError
 	if !errors.As(err, &ee) {
 		return "", err
+	}
+	if pulled, err := pull(ctx, runner, img, stream, notify); err != nil || pulled {
+		return tag, err
 	}
 
 	buildContext, err := img.buildContext()
@@ -115,6 +165,43 @@ func Ensure(ctx context.Context, runner *process.Runner, img Image, stream bool,
 	}
 	notify(capitalize(img.Title) + " image built successfully.")
 	return tag, nil
+}
+
+// pull fetches the prebuilt image and tags it locally. It reports false when
+// the image cannot be pulled, so that Ensure builds it.
+func pull(ctx context.Context, runner *process.Runner, img Image, stream bool, notify func(string)) (bool, error) {
+	remote := img.Remote()
+	if remote == "" {
+		return false, nil
+	}
+	notify("Pulling " + img.Title + " image " + remote + "...")
+	pullCtx, cancel := context.WithTimeout(ctx, pullTimeout)
+	defer cancel()
+	res, err := runner.Run(pullCtx, process.Command{Name: "docker", Args: []string{"pull", remote}, Stream: stream})
+	if err == nil {
+		res, err = runner.Run(ctx, process.Command{Name: "docker", Args: []string{"tag", remote, img.Tag()}})
+	}
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	if err != nil {
+		notify("Could not pull " + remote + reason(res) + "; building it locally.")
+		return false, nil
+	}
+	notify(capitalize(img.Title) + " image pulled.")
+	return true, nil
+}
+
+// reason returns the last stderr line of a failed command as " (line)".
+func reason(res *process.Result) string {
+	if res == nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(string(res.Stderr)), "\n")
+	if last := strings.TrimSpace(lines[len(lines)-1]); last != "" {
+		return " (" + last + ")"
+	}
+	return ""
 }
 
 func capitalize(s string) string {

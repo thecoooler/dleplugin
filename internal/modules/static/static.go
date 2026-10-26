@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/thecoooler/dleplugin/internal/app"
+	"github.com/thecoooler/dleplugin/internal/dockerimg"
 	"github.com/thecoooler/dleplugin/internal/modules/static/internal/static"
 	"github.com/thecoooler/dleplugin/internal/plugin"
 )
@@ -26,6 +27,9 @@ func (module) Name() string { return "static" }
 func (module) Commands(rt *app.Runtime) []*cobra.Command {
 	return []*cobra.Command{staticCommand(rt)}
 }
+
+// Images returns the PHPStan image.
+func (module) Images() []dockerimg.Image { return []dockerimg.Image{static.Image()} }
 
 // pluginRoot finds the plugin root from the working directory with symlinks
 // resolved.

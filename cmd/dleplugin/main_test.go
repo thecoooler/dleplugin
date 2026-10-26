@@ -49,3 +49,18 @@ func TestHelpOrder(t *testing.T) {
 		t.Errorf("help order\n got: %v\nwant: %v\n%s", got, want, out.String())
 	}
 }
+
+func TestToolImages(t *testing.T) {
+	var out bytes.Buffer
+	rt := app.NewRuntime(strings.NewReader(""), &out, &out, "")
+	root := app.NewRootCommand(rt, modules()...)
+	root.SetOut(&out)
+	root.SetArgs([]string{"tool-images"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	// The Images workflow publishes these repositories.
+	if !regexp.MustCompile(`^dleplugin-static:[0-9a-f]{12}\ndleplugin-test:[0-9a-f]{12}\n$`).MatchString(out.String()) {
+		t.Errorf("tool-images = %q", out.String())
+	}
+}

@@ -198,7 +198,9 @@ services for deployment sites, PHPStan, and patch checking.
   Admin requests follow redirects only within their original origin.
 - `static` runs PHPStan. Tool images use pinned base image digests, Composer
   lock files and a fixed PCOV version; their tags hash the full embedded build
-  context. Image build progress goes to stderr so `--json`/`--count` output
+  context. A missing image is pulled from `ghcr.io/thecoooler` under the same
+  tag (`DLEPLUGIN_IMAGE_REGISTRY` overrides the registry, empty disables) and
+  built locally when the pull fails. Image build progress goes to stderr so `--json`/`--count` output
   stays parseable. `-t/--tool-verbose` is the same as `-v`. `ignoreErrors` are
   Go regular expressions (RE2: no lookarounds). Findings or an analyser
   failure exit with code 1, without an extra error line. `--php-version`

@@ -21,8 +21,14 @@ jobs:
   verify:
     needs: guard
     uses: ./.github/workflows/ci.yml
-  package:
+  images:
     needs: verify
+    uses: ./.github/workflows/images.yml
+    permissions:
+      contents: read
+      packages: write
+  package:
+    needs: [verify, images]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

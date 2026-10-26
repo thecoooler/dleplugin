@@ -45,6 +45,9 @@ const (
 // image is the analysis image.
 var image = dockerimg.Image{Name: ImageName, Title: "static analysis", Dockerfile: dockerfile, Files: map[string][]byte{"composer.json": composerJSON, "composer.lock": composerLock}}
 
+// Image returns the analysis image.
+func Image() dockerimg.Image { return image }
+
 // ImageTag returns the content-derived tag of the embedded locked tool image.
 func ImageTag() string { return image.Tag() }
 

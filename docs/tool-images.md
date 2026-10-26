@@ -21,6 +21,29 @@ docker build -t dleplugin-test:dev internal/modules/test/internal/dletest/assets
 docker run --rm dleplugin-test:dev vendor/bin/pest --version
 ```
 
+## Prebuilt images
+
+`static` and `test` first look for the image locally, then pull
+`ghcr.io/thecoooler/<name>:<hash>` and tag it as `<name>:<hash>`, and build
+locally only when the pull fails (no network, unpublished tag, unsupported
+platform, timeout after 10 minutes). `DLEPLUGIN_IMAGE_REGISTRY` sets another
+registry prefix, for example a mirror; an empty value disables pulling, which
+is useful while changing the assets.
+
+The Images workflow (`.github/workflows/images.yml`) publishes them. It runs
+on pushes to main that change the assets or `internal/dockerimg`, on manual
+dispatch, and before packaging a release. The hidden `dleplugin tool-images`
+command prints the tags and, with `--context DIR`, writes the exact build
+contexts, so published tags always match the embedded assets. Tags already in
+the registry are skipped. Missing ones are built and smoke-tested on native
+amd64 and arm64 runners, pushed as `<hash>-amd64`/`<hash>-arm64`, and combined
+into a multi-platform `<hash>` tag.
+
+GHCR creates new packages as private. After the first publication, set the
+visibility of the `dleplugin-static` and `dleplugin-test` packages to public
+in their package settings; otherwise anonymous pulls fail and every user
+builds locally again.
+
 Runtime builds use the same assets in a deterministic tar context from stdin;
 no project files or credentials enter that build context. Apt package mirrors
 still receive updates: these pins make PHP/Composer tool versions predictable,

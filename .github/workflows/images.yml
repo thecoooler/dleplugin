@@ -1,0 +1,122 @@
+name: Images
+# Publishes the tool images that dockerimg.Ensure pulls instead of building.
+# Tags hash the embedded build contexts, so only missing tags are built.
+on:
+  push:
+    branches: [main]
+    paths:
+      - internal/dockerimg/**
+      - internal/modules/static/internal/static/assets/**
+      - internal/modules/test/internal/dletest/assets/**
+      - .github/workflows/images.yml
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: images-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  # Must match dockerimg.Registry.
+  REGISTRY: ghcr.io/thecoooler
+jobs:
+  plan:
+    name: Find unpublished tags
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      missing: ${{ steps.plan.outputs.missing }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - id: plan
+        run: |
+          missing=()
+          for tag in $(go run ./cmd/dleplugin tool-images); do
+            if docker buildx imagetools inspect "$REGISTRY/$tag" >/dev/null 2>&1; then
+              echo "$REGISTRY/$tag is published"
+            else
+              echo "$REGISTRY/$tag is missing"
+              missing+=("$tag")
+            fi
+          done
+          echo "missing=$(jq --compact-output --null-input '$ARGS.positional' --args "${missing[@]}")" >> "$GITHUB_OUTPUT"
+  build:
+    name: Build ${{ matrix.tag }} (${{ matrix.platform.arch }})
+    needs: plan
+    if: needs.plan.outputs.missing != '[]'
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        tag: ${{ fromJSON(needs.plan.outputs.missing) }}
+        # Native runners: emulated arm64 builds compile PHP extensions slowly.
+        platform:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go run ./cmd/dleplugin tool-images --context "$RUNNER_TEMP/images"
+      - name: Build and smoke-test
+        env:
+          TAG: ${{ matrix.tag }}
+          ARCH: ${{ matrix.platform.arch }}
+        run: |
+          name="${TAG%%:*}"
+          ref="$REGISTRY/$TAG-$ARCH"
+          docker build --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --tag "$ref" "$RUNNER_TEMP/images/$name"
+          case "$name" in
+            dleplugin-static) docker run --rm "$ref" vendor/bin/phpstan --version ;;
+            dleplugin-test)
+              docker run --rm "$ref" vendor/bin/pest --version
+              docker run --rm "$ref" php -r 'exit(phpversion("pcov") === "1.0.12" ? 0 : 1);'
+              ;;
+            *) echo "no smoke test for $name" >&2; exit 1 ;;
+          esac
+          echo "REF=$ref" >> "$GITHUB_ENV"
+      - run: echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: docker push "$REF"
+  publish:
+    name: Publish ${{ matrix.tag }}
+    needs: [plan, build]
+    if: needs.plan.outputs.missing != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        tag: ${{ fromJSON(needs.plan.outputs.missing) }}
+    steps:
+      - run: echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Combine the platforms under the content tag
+        env:
+          TAG: ${{ matrix.tag }}
+        run: |
+          docker buildx imagetools create --tag "$REGISTRY/$TAG" "$REGISTRY/$TAG-amd64" "$REGISTRY/$TAG-arm64"
+          docker buildx imagetools inspect "$REGISTRY/$TAG"
