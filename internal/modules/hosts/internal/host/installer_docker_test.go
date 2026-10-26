@@ -51,7 +51,7 @@ func TestInstallerDocker(t *testing.T) {
 			}
 			root := s.HostDir(name)
 			config := readTestFile(t, filepath.Join(root, "engine/data/config.php"))
-			for _, want := range []string{"'version_id' => '21.0'", "'http_home_url' => '" + result.URL + "'", "'allow_alt_url' => '1'"} {
+			for _, want := range []string{"'version_id' => '21.0'", "'http_home_url' => '" + result.URL + "'", "'allow_alt_url' => '1'", "'site_offline' => '1'"} {
 				if !strings.Contains(config, want) {
 					t.Errorf("config missing %s", want)
 				}
@@ -87,8 +87,22 @@ echo 'verified';
 				client.expectGate(result.Host.Domain(), "/")
 			} else {
 				resp := client.do(result.Host.Domain(), "GET", "/", nil, nil)
-				if resp.code != 200 || !strings.Contains(resp.body, "<!DOCTYPE html>") && !strings.Contains(resp.body, "<!doctype html>") {
-					t.Fatalf("site: HTTP %d %.500s", resp.code, resp.body)
+				if resp.code != 503 || !strings.Contains(resp.body, "Сайт находится на текущей реконструкции") {
+					t.Fatalf("offline site: HTTP %d %.500s", resp.code, resp.body)
+				}
+				if err := SetSetting(s, name, "site_offline", "off"); err != nil {
+					t.Fatal(err)
+				}
+				resp = client.do(result.Host.Domain(), "GET", "/", nil, nil)
+				if resp.code != 200 || strings.Contains(resp.body, "Сайт находится на текущей реконструкции") {
+					t.Fatalf("enabled site: HTTP %d %.500s", resp.code, resp.body)
+				}
+				if err := SetSetting(s, name, "site_offline", "on"); err != nil {
+					t.Fatal(err)
+				}
+				resp = client.do(result.Host.Domain(), "GET", "/", nil, nil)
+				if resp.code != 503 || !strings.Contains(resp.body, "Сайт находится на текущей реконструкции") {
+					t.Fatalf("disabled site: HTTP %d %.500s", resp.code, resp.body)
 				}
 			}
 		})

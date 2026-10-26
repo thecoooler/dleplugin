@@ -8,6 +8,46 @@ import (
 	"time"
 )
 
+func TestDefaultSiteOffline(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	t.Setenv("DLEHOST_CONFIG", path)
+	for _, existing := range []bool{false, true} {
+		if existing {
+			if err := os.WriteFile(path, []byte("default_dle: '21.0'\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cfg, err := Load()
+		if err != nil || !cfg.DefaultSiteOffline {
+			t.Fatalf("default: %+v %v", cfg, err)
+		}
+	}
+	key := Keys["default_site_offline"]
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"off", "on", ""} {
+		if err := key.Set(cfg, value); err != nil {
+			t.Fatal(err)
+		}
+		if err := Save(cfg); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err = Load()
+		want := value
+		if want == "" {
+			want = "on"
+		}
+		if err != nil || key.Get(cfg) != want {
+			t.Fatalf("round trip %q: %+v %v", value, cfg, err)
+		}
+	}
+	if err := key.Set(cfg, "yes"); err == nil {
+		t.Fatal("accepted invalid default")
+	}
+}
+
 func TestDefaultPHPAuto(t *testing.T) {
 	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
 	cfg, err := Load()

@@ -32,6 +32,7 @@ Hosts module (root help group: `DLE hosts`; see [DLE hosts](hosts.md)):
 - `dleplugin hosts up/down`
 - `dleplugin hosts compose [ARGS...]`
 - `dleplugin hosts list/add/remove/path/port/versions`
+- `dleplugin hosts get NAME KEY` / `dleplugin hosts set NAME KEY VALUE`
 - `dleplugin hosts protect`
 - `dleplugin hosts config show/get/set/unset/path`
 

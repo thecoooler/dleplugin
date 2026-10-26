@@ -220,6 +220,7 @@ type AddOptions struct {
 	PHPVersions []string // allowed PHP versions
 	DistsDir    string
 	Admin       Credentials
+	SiteOffline string          // on (default, closed) or off (open)
 	Protect     string          // default, on or off
 	Settings    ProtectSettings // global login form settings
 }
@@ -237,6 +238,13 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 		return nil, err
 	}
 	if err := validateHostName(name); err != nil {
+		return nil, err
+	}
+	offline := opts.SiteOffline
+	if offline == "" {
+		offline = "on"
+	}
+	if err := ValidateSetting("site_offline", offline); err != nil {
 		return nil, err
 	}
 	protect, err := ParseProtect(opts.Protect)
@@ -388,6 +396,9 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 		return fail(err)
 	}
 	if err := finishInstallation(staging); err != nil {
+		return fail(err)
+	}
+	if err := setSiteOffline(staging, offline); err != nil {
 		return fail(err)
 	}
 

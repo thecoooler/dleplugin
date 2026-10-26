@@ -53,7 +53,7 @@ define('DATALIFEENGINE', true);
 define('ROOT_DIR', '/var/www/%s');
 define('ENGINE_DIR', ROOT_DIR.'/engine');
 require ENGINE_DIR.'/data/config.php';
-if ($config['version_id'] !== '%s' || $config['http_home_url'] !== '%s' || $config['allow_alt_url'] != 1) { fwrite(STDERR, 'wrong site configuration'); exit(2); }
+if ($config['version_id'] !== '%s' || $config['http_home_url'] !== '%s' || $config['allow_alt_url'] != 1 || $config['site_offline'] != 1) { fwrite(STDERR, 'wrong site configuration'); exit(2); }
 if (!is_file(ROOT_DIR.'/templates/'.$config['skin'].'/main.tpl')) exit(3);
 require ENGINE_DIR.'/classes/mysql.php';
 require ENGINE_DIR.'/data/dbconfig.php';
@@ -71,7 +71,8 @@ if (!$posts['n']) exit(5);
 			client := &gateClient{t: t, base: "http://127.0.0.1:" + s.HTTPPort(), http: &http.Client{Timeout: 20 * time.Second,
 				CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 			resp := client.do(result.Host.Domain(), "GET", "/", nil, nil)
-			if resp.code != 200 || !strings.Contains(strings.ToLower(resp.body), "<!doctype html") || strings.Contains(resp.body, "Fatal error") {
+			// Older DLE versions serve their maintenance page with HTTP 200.
+			if resp.code != 200 && resp.code != 503 || !strings.Contains(resp.body, "Сайт находится на текущей реконструкции") || strings.Contains(resp.body, "Fatal error") {
 				t.Fatalf("site: HTTP %d %.1500s", resp.code, resp.body)
 			}
 		})

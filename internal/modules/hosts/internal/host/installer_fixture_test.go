@@ -54,7 +54,7 @@ func serveTestInstaller(t *testing.T, s *stack.Stack) {
 		case "installtemplate", "docreatedb":
 			fmt.Fprint(w, `{"status":"ok","offset":1,"total":1}`)
 		case "dosaveconfig":
-			write("engine/data/config.php", "<?php\n$config = array('skin' => 'Default', 'allow_alt_url' => '0', 'http_home_url' => '"+r.Header.Get("X-Forwarded-Proto")+"://"+r.Host+"/');")
+			write("engine/data/config.php", "<?php\n$config = array('skin' => 'Default', 'site_offline' => '0', 'allow_alt_url' => '0', 'http_home_url' => '"+r.Header.Get("X-Forwarded-Proto")+"://"+r.Host+"/');")
 			if err := os.Remove(filepath.Join(root, "install.php")); err != nil {
 				t.Error(err)
 			}
@@ -100,7 +100,7 @@ case 'docreatedb':
  echo '{"status":"ok","offset":1,"total":1}'; break;
 case 'dosaveconfig':
  $url = ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? 'http').'://'.$_SERVER['HTTP_HOST'].'/';
- file_put_contents(__DIR__.'/engine/data/config.php', "<?php\n\$config = array('skin' => 'Default', 'allow_alt_url' => '1', 'http_home_url' => ".var_export($url, true).");");
+ file_put_contents(__DIR__.'/engine/data/config.php', "<?php\n\$config = array('skin' => 'Default', 'site_offline' => '0', 'allow_alt_url' => '1', 'http_home_url' => ".var_export($url, true).");");
  unlink(__FILE__); echo '{"status":"ok"}'; break;
 default: http_response_code(400);
 }

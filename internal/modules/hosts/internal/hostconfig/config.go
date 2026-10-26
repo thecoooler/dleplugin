@@ -20,13 +20,14 @@ import (
 // Config is the hosts settings, stored in ~/.config/dlehost/config.yml
 // (the path can be overridden with DLEHOST_CONFIG).
 type Config struct {
-	BaseDomain     string   `yaml:"base_domain"`
-	ExternalOrigin string   `yaml:"external_origin"`
-	ProjectDir     string   `yaml:"project_dir"`
-	DistsDir       string   `yaml:"dists_dir"`
-	DefaultDLE     string   `yaml:"default_dle"`
-	DefaultPHP     string   `yaml:"default_php"`
-	PHPVersions    []string `yaml:"php_versions"`
+	BaseDomain         string   `yaml:"base_domain"`
+	ExternalOrigin     string   `yaml:"external_origin"`
+	ProjectDir         string   `yaml:"project_dir"`
+	DistsDir           string   `yaml:"dists_dir"`
+	DefaultDLE         string   `yaml:"default_dle"`
+	DefaultSiteOffline bool     `yaml:"default_site_offline"`
+	DefaultPHP         string   `yaml:"default_php"`
+	PHPVersions        []string `yaml:"php_versions"`
 	// Protect enables the password login form for hosts in the default mode.
 	Protect bool `yaml:"protect,omitempty"`
 	// ProtectSessionTTL is the login form session lifetime; empty or never means no expiry.
@@ -95,6 +96,26 @@ var Keys = map[string]Key{
 				return fmt.Errorf("PHP version %s is not in php_versions (%s)", v, strings.Join(c.PHPVersions, ", "))
 			}
 			c.DefaultPHP = v
+			return nil
+		},
+	},
+	"default_site_offline": {
+		Help: "DLE maintenance mode for new hosts: on (default, site closed) or off",
+		Get: func(c *Config) string {
+			if c.DefaultSiteOffline {
+				return "on"
+			}
+			return "off"
+		},
+		Set: func(c *Config, v string) error {
+			switch v {
+			case "on", "":
+				c.DefaultSiteOffline = true
+			case "off":
+				c.DefaultSiteOffline = false
+			default:
+				return fmt.Errorf("default_site_offline: use on or off")
+			}
 			return nil
 		},
 	},
@@ -175,8 +196,9 @@ func Lookup(name string) (Key, error) {
 
 func defaultConfig() *Config {
 	return &Config{
-		DefaultPHP:  "auto",
-		PHPVersions: []string{"8.5", "7.4"},
+		DefaultSiteOffline: true,
+		DefaultPHP:         "auto",
+		PHPVersions:        []string{"8.5", "7.4"},
 	}
 }
 
