@@ -45,8 +45,8 @@ func hostsCommand(rt *app.Runtime) *cobra.Command {
 
 The stack files are embedded in the binary; only Docker with Compose and
 DLE distributions are needed. The hosts settings are kept separately from the
-dleplugin config, in ~/.config/dlehost/config.yml (DLEHOST_CONFIG), and the
-stack lives in ~/.local/share/dlehost (DLEHOST_DIR or project_dir).`,
+dleplugin config, in ~/.config/dleplugin/hosts.yml (DLEPLUGIN_HOSTS_CONFIG), and the
+stack lives in ~/.local/share/dleplugin/hosts (DLEPLUGIN_HOSTS_DIR or project_dir).`,
 		Args: cobra.NoArgs,
 	}
 	cmd.AddCommand(upCmd(rt), downCmd(rt), composeCmd(rt), listCmd(rt), addCmd(rt), removeCmd(rt),
@@ -274,8 +274,8 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			credentials := host.Credentials{
-				Login:    credentialValue(cmd, "admin-login", adminLogin, "DLEHOST_ADMIN_LOGIN"),
-				Password: credentialValue(cmd, "admin-password", adminPassword, "DLEHOST_ADMIN_PASSWORD"),
+				Login:    credentialValue(cmd, "admin-login", adminLogin, "DLEPLUGIN_HOSTS_ADMIN_LOGIN"),
+				Password: credentialValue(cmd, "admin-password", adminPassword, "DLEPLUGIN_HOSTS_ADMIN_PASSWORD"),
 			}
 			if err := credentials.Validate(); err != nil {
 				return err
@@ -345,8 +345,8 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 	cmd.Flags().StringVar(&dle, "dle", "", "DLE version (default: default_dle)")
 	cmd.Flags().StringVar(&distArchive, "dist", "", "path to a DLE distribution ZIP (instead of <version>.zip in dists_dir)")
 	cmd.Flags().StringVar(&php, "php", "", "PHP version (default: chosen by DLE version; auto or an explicit version)")
-	cmd.Flags().StringVar(&adminLogin, "admin-login", "admin", "administrator login (DLEHOST_ADMIN_LOGIN)")
-	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "administrator password (DLEHOST_ADMIN_PASSWORD)")
+	cmd.Flags().StringVar(&adminLogin, "admin-login", "admin", "administrator login (DLEPLUGIN_HOSTS_ADMIN_LOGIN)")
+	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "administrator password (DLEPLUGIN_HOSTS_ADMIN_PASSWORD)")
 	cmd.Flags().StringVar(&protect, "protect", host.ProtectDefault, "login form in front of the site: default (global setting), on, off")
 	cmd.Flags().StringVar(&siteOffline, "site-offline", "", "DLE maintenance mode: on (site closed) or off (site open); default: default_site_offline (on)")
 	return cmd
@@ -458,7 +458,7 @@ and which passwords are set.`,
 			"  dleplugin hosts protect shop default  # shop follows the global setting again\n" +
 			"  dleplugin hosts protect shop reset    # end all form sessions of shop\n" +
 			"  dleplugin hosts config set protect_session_ttl 30d\n" +
-			"  logout: https://shop.example.com/__dlehost/logout",
+			"  logout: https://shop.example.com/__dleplugin/logout",
 		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			step := stepper(rt)

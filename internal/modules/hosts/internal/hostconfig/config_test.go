@@ -10,7 +10,7 @@ import (
 
 func TestDefaultSiteOffline(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
-	t.Setenv("DLEHOST_CONFIG", path)
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", path)
 	for _, existing := range []bool{false, true} {
 		if existing {
 			if err := os.WriteFile(path, []byte("default_dle: '21.0'\n"), 0o644); err != nil {
@@ -49,7 +49,7 @@ func TestDefaultSiteOffline(t *testing.T) {
 }
 
 func TestDefaultPHPAuto(t *testing.T) {
-	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
 	cfg, err := Load()
 	if err != nil || cfg.DefaultPHP != "auto" {
 		t.Fatalf("default PHP: %v %v", cfg, err)
@@ -107,7 +107,7 @@ func TestRoutingValidation(t *testing.T) {
 }
 
 func TestRoutingConfigRoundTrip(t *testing.T) {
-	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestRoutingConfigRoundTrip(t *testing.T) {
 
 func TestProtectKey(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
-	t.Setenv("DLEHOST_CONFIG", path)
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", path)
 	// A config without the protect key keeps the form off.
 	if err := os.WriteFile(path, []byte("base_domain: dle.icooler.opik.net\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func TestProtectKey(t *testing.T) {
 
 func TestProtectSessionTTL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
-	t.Setenv("DLEHOST_CONFIG", path)
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", path)
 	// An old config without the key has no server-side expiry.
 	if err := os.WriteFile(path, []byte("protect: true\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -224,7 +224,7 @@ func TestProtectSessionTTL(t *testing.T) {
 
 func TestDefaultAdminPath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
-	t.Setenv("DLEHOST_CONFIG", path)
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", path)
 	key := Keys["default_admin_path"]
 	for _, content := range []string{"", "default_dle: '21.0'\n", "default_admin_path: ''\n"} {
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {

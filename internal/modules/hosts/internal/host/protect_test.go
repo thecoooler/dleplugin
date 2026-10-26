@@ -76,7 +76,7 @@ func TestProtectRegistryCompatibility(t *testing.T) {
 func TestVhostGate(t *testing.T) {
 	h := Host{Name: "shop", DomainName: "shop.dle.icooler.opik.net", ExternalOrigin: "https://shop.dle.icooler.opik.net", DLE: "21.0", PHP: "8.5"}
 	open := vhostConfig(h, false, 0)
-	for _, unexpected := range []string{gateMarker, "ServerAlias", "RewriteEngine", "__dlehost"} {
+	for _, unexpected := range []string{gateMarker, "ServerAlias", "RewriteEngine", "__dleplugin"} {
 		if strings.Contains(open, unexpected) {
 			t.Fatalf("unprotected vhost contains %q", unexpected)
 		}
@@ -86,14 +86,14 @@ func TestVhostGate(t *testing.T) {
 		"ServerName shop.dle.icooler.opik.net",
 		"ServerAlias shop.localhost shop.*.localhost",
 		gateMarker + "shop",
-		`AliasMatch "^/__dlehost/(login|logout)$" "/opt/dlehost/gate/gate.php"`,
-		"RewriteCond %{REQUEST_URI} !^/__dlehost/(login|logout)$",
-		"RewriteRule ^ /__dlehost/login [PT,L]",
-		"SetEnv DLEHOST_GATE_TTL 2592000",
-		`-f '/var/lib/dlehost/gate/shop/' . sha1($1)`,
+		`AliasMatch "^/__dleplugin/(login|logout)$" "/opt/dleplugin/hosts/gate/gate.php"`,
+		"RewriteCond %{REQUEST_URI} !^/__dleplugin/(login|logout)$",
+		"RewriteRule ^ /__dleplugin/login [PT,L]",
+		"SetEnv DLEPLUGIN_HOSTS_GATE_TTL 2592000",
+		`-f '/var/lib/dleplugin/hosts/gate/shop/' . sha1($1)`,
 		// HTTPS accepts only the Secure cookie, HTTP aliases only the plain one.
-		`req('X-Forwarded-Proto') == 'https' && %{HTTP_COOKIE} =~ /(?:^|;)\s*__Host-dlehost_gate=`,
-		`req('X-Forwarded-Proto') != 'https' && %{HTTP_COOKIE} =~ /(?:^|;)\s*dlehost_gate=`,
+		`req('X-Forwarded-Proto') == 'https' && %{HTTP_COOKIE} =~ /(?:^|;)\s*__Host-dleplugin_hosts_gate=`,
+		`req('X-Forwarded-Proto') != 'https' && %{HTTP_COOKIE} =~ /(?:^|;)\s*dleplugin_hosts_gate=`,
 		`ProxyFCGISetEnvIf "req('X-Forwarded-Proto') == 'https'" HTTPS "on"`,
 	} {
 		if !strings.Contains(gated, expected) {
@@ -105,20 +105,20 @@ func TestVhostGate(t *testing.T) {
 	}
 	// A local host without an HTTPS origin knows only the plain cookie.
 	local := vhostConfig(Host{Name: "dev", DLE: "21.0", PHP: "7.4"}, true, 0)
-	if strings.Contains(local, "__Host-") || strings.Contains(local, "X-Forwarded-Proto") || !strings.Contains(local, "SetEnv DLEHOST_GATE_TTL 0") {
+	if strings.Contains(local, "__Host-") || strings.Contains(local, "X-Forwarded-Proto") || !strings.Contains(local, "SetEnv DLEPLUGIN_HOSTS_GATE_TTL 0") {
 		t.Fatalf("local gate:\n%s", local)
 	}
 }
 
 // fakeDocker replaces docker: it logs calls (and stdin) and fails when the
 // arguments or stdin contain the string from the fail file. On graceful it
-// records whether the directory from DLEHOST_TEST_WATCH already exists.
+// records whether the directory from DLEPLUGIN_HOSTS_TEST_WATCH already exists.
 func fakeDocker(t *testing.T) (calls, fail string) {
 	t.Helper()
 	bin := t.TempDir()
 	calls, fail = filepath.Join(bin, "calls"), filepath.Join(bin, "fail")
 	script := "#!/bin/sh\n" + fakeInstallerPort + "in=$(cat)\necho \"$* $in\" >> " + calls + "\n" +
-		"case \"$*\" in *graceful*) if [ -n \"$DLEHOST_TEST_WATCH\" ] && [ -e \"$DLEHOST_TEST_WATCH\" ]; then echo published-before-reload >> " + calls + "; fi;; esac\n" +
+		"case \"$*\" in *graceful*) if [ -n \"$DLEPLUGIN_HOSTS_TEST_WATCH\" ] && [ -e \"$DLEPLUGIN_HOSTS_TEST_WATCH\" ]; then echo published-before-reload >> " + calls + "; fi;; esac\n" +
 		"if [ -s " + fail + " ]; then pat=$(cat " + fail + "); case \"$* $in\" in *\"$pat\"*) exit 1;; esac; fi\nexit 0\n"
 	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestApplyProtectGlobal(t *testing.T) {
 		t.Fatalf("session dir: %v %v", info, err)
 	}
 	log := readTestFile(t, calls)
-	if !strings.Contains(log, "exec -T -u www-data apache sh -c test -r /opt/dlehost/gate/gate.php") || !strings.Contains(log, "php85") || !strings.Contains(log, "graceful") {
+	if !strings.Contains(log, "exec -T -u www-data apache sh -c test -r /opt/dleplugin/hosts/gate/gate.php") || !strings.Contains(log, "php85") || !strings.Contains(log, "graceful") {
 		t.Fatalf("gate check or reload missing:\n%s", log)
 	}
 	// A repeat without changes does not touch apache.
@@ -329,7 +329,7 @@ func TestProtectSessionTTL(t *testing.T) {
 	// never → 30d: the lifetime got shorter, so non-expiring sessions are removed and the directory stays.
 	month := ProtectSettings{SessionTTL: 30 * 24 * time.Hour}
 	apply(month, unlimited)
-	if !strings.Contains(readTestFile(t, vhostPath(s, "on")), "SetEnv DLEHOST_GATE_TTL 2592000") {
+	if !strings.Contains(readTestFile(t, vhostPath(s, "on")), "SetEnv DLEPLUGIN_HOSTS_GATE_TTL 2592000") {
 		t.Fatal("TTL not applied to protected vhost")
 	}
 	if readTestFile(t, vhostPath(s, "off")) != offVhost {
@@ -445,7 +445,7 @@ func TestRemoveKeepsHostClosedOnFailure(t *testing.T) {
 	if err := os.WriteFile(calls, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DLEHOST_TEST_WATCH", s.HostDir("shop"))
+	t.Setenv("DLEPLUGIN_HOSTS_TEST_WATCH", s.HostDir("shop"))
 	if err := Remove(s, "shop", func(string) {}); err != nil {
 		t.Fatal(err)
 	}
@@ -465,7 +465,7 @@ func TestAddPublishesFilesAfterVhost(t *testing.T) {
 	calls, _ := fakeDocker(t)
 	dists := t.TempDir()
 	writeTestDist(t, dists, "21.0")
-	t.Setenv("DLEHOST_TEST_WATCH", s.HostDir("shop"))
+	t.Setenv("DLEPLUGIN_HOSTS_TEST_WATCH", s.HostDir("shop"))
 	if _, err := Add(s, AddOptions{Name: "shop", DLE: "21.0", PHP: "8.5", PHPVersions: []string{"8.5"}, DistsDir: dists,
 		Admin: Credentials{"admin", "secret"}, Protect: "on"}, func(string) {}); err != nil {
 		t.Fatal(err)

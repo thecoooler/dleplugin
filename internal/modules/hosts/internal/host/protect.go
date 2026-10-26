@@ -62,7 +62,7 @@ func (h Host) Protected(global bool) bool {
 }
 
 // gateMarker is present only in vhosts closed by the login form.
-const gateMarker = "SetEnv DLEHOST_GATE_SITE "
+const gateMarker = "SetEnv DLEPLUGIN_HOSTS_GATE_SITE "
 
 // Cookie value: <UTC expiry, like %{TIME} in apache>-<256-bit base64url>.
 const cookieValueRe = `(([0-9]{14})-[A-Za-z0-9_-]{43})\s*(?:;|$)`
@@ -70,14 +70,14 @@ const cookieValueRe = `(([0-9]{14})-[A-Za-z0-9_-]{43})\s*(?:;|$)`
 // gateExpr is the valid session condition. The cookie name depends on the
 // scheme as in gate.php: over HTTPS (X-Forwarded-Proto: https for public
 // HTTPS hosts, like FastCGI HTTPS=on) only the Secure cookie
-// __Host-dlehost_gate is accepted, otherwise only dlehost_gate. The expiry in
+// __Host-dleplugin_hosts_gate is accepted, otherwise only dleplugin_hosts_gate. The expiry in
 // the value has not passed, and the host session directory has a file for the
 // value with the fingerprint of the effective bcrypt hash. An old password gives no valid session.
 func gateExpr(h Host) string {
-	plain := `%{HTTP_COOKIE} =~ /(?:^|;)\s*dlehost_gate=` + cookieValueRe + `/`
+	plain := `%{HTTP_COOKIE} =~ /(?:^|;)\s*dleplugin_hosts_gate=` + cookieValueRe + `/`
 	cookie := plain
 	if strings.HasPrefix(h.ExternalOrigin, "https://") {
-		secure := `%{HTTP_COOKIE} =~ /(?:^|;)\s*__Host-dlehost_gate=` + cookieValueRe + `/`
+		secure := `%{HTTP_COOKIE} =~ /(?:^|;)\s*__Host-dleplugin_hosts_gate=` + cookieValueRe + `/`
 		cookie = fmt.Sprintf(`(req('X-Forwarded-Proto') == 'https' && %s || req('X-Forwarded-Proto') != 'https' && %s)`, secure, plain)
 	}
 	return fmt.Sprintf(`%s && $2 > %%{TIME} && -f '%s/%s/' . sha1($1) . '-v2-%s'`, cookie, stack.ContainerGateDir, h.Name, h.gateKey)
@@ -88,17 +88,17 @@ func gateExpr(h Host) string {
 // site rules (RewriteEngine Off, Satisfy Any, Require in <If> and so on) do
 // not cancel it; a request without a session goes to the form. This is the only
 // check: there is no separate fallback Require. The site .htaccess restrictions
-// apply as usual after login. Without login only /__dlehost/login and logout are open.
+// apply as usual after login. Without login only /__dleplugin/login and logout are open.
 func gateConfig(h Host, ttl time.Duration) string {
 	return fmt.Sprintf(`    # Separate site password login (hosts protect)
     %[1]s%[2]s
-    SetEnv DLEHOST_GATE_TTL %[3]d
-    AliasMatch "^/__dlehost/(login|logout)$" "%[4]s/gate.php"
+    SetEnv DLEPLUGIN_HOSTS_GATE_TTL %[3]d
+    AliasMatch "^/__dleplugin/(login|logout)$" "%[4]s/gate.php"
     RewriteEngine On
-    RewriteCond %%{REQUEST_URI} !^/__dlehost/(login|logout)$
+    RewriteCond %%{REQUEST_URI} !^/__dleplugin/(login|logout)$
     RewriteCond expr "!(%[5]s)"
-    RewriteRule ^ /__dlehost/login [PT,L]
-    <LocationMatch "^/__dlehost/(login|logout)$">
+    RewriteRule ^ /__dleplugin/login [PT,L]
+    <LocationMatch "^/__dleplugin/(login|logout)$">
         Require all granted
     </LocationMatch>
 `, gateMarker, h.Name, int64(ttl/time.Second), stack.ContainerGateApp, gateExpr(h))

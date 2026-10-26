@@ -18,11 +18,11 @@ import (
 )
 
 // Uses a user-provided licensed distribution, never downloads or embeds DLE.
-// DLEHOST_TEST_DLE21=/path/to/21.0.zip go test ./internal/modules/hosts/internal/host -run TestInstallerDocker -v
+// DLEPLUGIN_HOSTS_TEST_DLE21=/path/to/21.0.zip go test ./internal/modules/hosts/internal/host -run TestInstallerDocker -v
 func TestInstallerDocker(t *testing.T) {
-	archive := os.Getenv("DLEHOST_TEST_DLE21")
+	archive := os.Getenv("DLEPLUGIN_HOSTS_TEST_DLE21")
 	if archive == "" {
-		t.Skip("set DLEHOST_TEST_DLE21 to an original DLE 21.0 zip")
+		t.Skip("set DLEPLUGIN_HOSTS_TEST_DLE21 to an original DLE 21.0 zip")
 	}
 	archive, err := filepath.Abs(archive)
 	if err != nil {
@@ -188,16 +188,16 @@ echo 'verified';
 
 func installerTestStack(t *testing.T) *stack.Stack {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "dlehost-install-test-")
+	dir, err := os.MkdirTemp("", "dleplugin-hosts-install-test-")
 	if err != nil {
 		t.Fatal(err)
 	}
-	project := "dlehostinstall" + randomTestHex(t, 4)
-	t.Setenv("DLEHOST_DIR", dir)
-	t.Setenv("DLEHOST_COMPOSE_PROJECT_NAME", project)
-	t.Setenv("DLEHOST_BIND_ADDRESS", "127.0.0.1")
-	t.Setenv("DLEHOST_HTTP_PORT", strconv.Itoa(freePort(t)))
-	t.Setenv("DLEHOST_DB_PORT", strconv.Itoa(freePort(t)))
+	project := "dlepluginhostsinstall" + randomTestHex(t, 4)
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_COMPOSE_PROJECT_NAME", project)
+	t.Setenv("DLEPLUGIN_HOSTS_BIND_ADDRESS", "127.0.0.1")
+	t.Setenv("DLEPLUGIN_HOSTS_HTTP_PORT", strconv.Itoa(freePort(t)))
+	t.Setenv("DLEPLUGIN_HOSTS_DB_PORT", strconv.Itoa(freePort(t)))
 	s, err := stack.Open(dir)
 	if err != nil {
 		t.Fatal(err)

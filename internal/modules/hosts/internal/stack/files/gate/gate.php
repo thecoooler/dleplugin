@@ -9,20 +9,20 @@
 // removes the session files.
 //
 // The cookie name depends on the scheme as in the vhost: over HTTPS (HTTPS=on from
-// ProxyFCGISetEnvIf of public HTTPS hosts) only the Secure __Host-dlehost_gate,
-// otherwise dlehost_gate. The session lifetime is DLEHOST_GATE_TTL from the vhost
+// ProxyFCGISetEnvIf of public HTTPS hosts) only the Secure __Host-dleplugin_hosts_gate,
+// otherwise dleplugin_hosts_gate. The session lifetime is DLEPLUGIN_HOSTS_GATE_TTL from the vhost
 // (seconds, 0 means no server-side expiry).
 
 declare(strict_types=1);
 
-const GATE_DIR = '/var/lib/dlehost/gate';
-const PASSWORDS_FILE = '/opt/dlehost/protect/passwords.json';
+const GATE_DIR = '/var/lib/dleplugin/hosts/gate';
+const PASSWORDS_FILE = '/opt/dleplugin/hosts/protect/passwords.json';
 const NO_EXPIRY = '99991231235959'; // "no expiry" in the %{TIME} format
 const COOKIE_MAX_AGE = 400 * 24 * 3600; // browsers keep cookies for ~400 days at most
 const MAX_FAILURES = 20;   // failed attempts per site…
 const FAILURE_WINDOW = 900; // …within 15 minutes
-const LOGIN_PATH = '/__dlehost/login';
-const LOGOUT_PATH = '/__dlehost/logout';
+const LOGIN_PATH = '/__dleplugin/login';
+const LOGOUT_PATH = '/__dleplugin/logout';
 
 header('Cache-Control: no-store');
 header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
@@ -31,15 +31,15 @@ header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
 header('X-Robots-Tag: noindex, nofollow');
 
-$site = (string)($_SERVER['DLEHOST_GATE_SITE'] ?? '');
-$ttl = (string)($_SERVER['DLEHOST_GATE_TTL'] ?? '');
+$site = (string)($_SERVER['DLEPLUGIN_HOSTS_GATE_SITE'] ?? '');
+$ttl = (string)($_SERVER['DLEPLUGIN_HOSTS_GATE_TTL'] ?? '');
 if (!preg_match('/^[a-z0-9]([a-z0-9-]{0,40}[a-z0-9])?$/', $site) || !preg_match('/^[0-9]{1,12}$/', $ttl)) {
     fail(500, 'Login is not configured');
 }
 $ttl = (int)$ttl;
 $secure = ($_SERVER['HTTPS'] ?? '') === 'on';
-$sessionCookie = $secure ? '__Host-dlehost_gate' : 'dlehost_gate';
-$csrfCookie = $secure ? '__Host-dlehost_gate_csrf' : 'dlehost_gate_csrf';
+$sessionCookie = $secure ? '__Host-dleplugin_hosts_gate' : 'dleplugin_hosts_gate';
+$csrfCookie = $secure ? '__Host-dleplugin_hosts_gate_csrf' : 'dleplugin_hosts_gate_csrf';
 $dir = GATE_DIR . '/' . $site;
 // One hash snapshot per request: a password change changes the session namespace.
 $config = json_decode((string)@file_get_contents(PASSWORDS_FILE), true);
@@ -137,9 +137,9 @@ function logout(): void
         }
         // End the sessions under both cookie names the browser sent:
         // a non-Secure cookie (HTTP login) is also sent over HTTPS.
-        foreach (['dlehost_gate', '__Host-dlehost_gate'] as $name) {
+        foreach (['dleplugin_hosts_gate', '__Host-dleplugin_hosts_gate'] as $name) {
             deleteSession($name);
-            if (isset($_COOKIE[$name]) && ($GLOBALS['secure'] || $name === 'dlehost_gate')) {
+            if (isset($_COOKIE[$name]) && ($GLOBALS['secure'] || $name === 'dleplugin_hosts_gate')) {
                 setGateCookie($name, '', 1, 'Lax');
             }
         }
@@ -232,7 +232,7 @@ function safeReturn($value): string
 {
     if (!is_string($value) || $value === '' || strlen($value) > 4096 || $value[0] !== '/'
         || preg_match('/[\x00-\x20\x7f\\\\]/', $value) || strncmp($value, '//', 2) === 0
-        || strncmp(rawurldecode($value), '/__dlehost/', 11) === 0) {
+        || strncmp(rawurldecode($value), '/__dleplugin/', strlen('/__dleplugin/')) === 0) {
         return '/';
     }
     return $value;

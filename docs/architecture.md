@@ -73,7 +73,7 @@ internal/modules/hosts/internal/host/
 internal/modules/hosts/internal/dist/
                            clean DLE distributions: inspect, resolve, extract
 internal/modules/hosts/internal/hostconfig/
-                           hosts config ~/.config/dlehost/config.yml
+                           hosts config ~/.config/dleplugin/hosts.yml
 internal/modules/skills/   the skills module: skills list/install/uninstall
 internal/modules/skills/internal/bundle/
                            embedded skill trees and managed copy lifecycle

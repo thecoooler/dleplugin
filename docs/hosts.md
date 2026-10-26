@@ -2,10 +2,8 @@
 
 `dleplugin hosts` runs DLE sites in a local Docker stack: Apache, PHP-FPM 8.5
 and 7.4, MariaDB. The stack files are embedded in the binary; only Docker with
-Compose and clean DLE distributions are needed. The module was moved here from
-the standalone `dlehost` CLI and keeps its config, stack and data formats, so
-an existing dlehost stack works without changes (see
-[Moving from dlehost](#moving-from-dlehost)).
+Compose and clean DLE distributions are needed. The hosts module uses its own
+configuration and data directories under dleplugin.
 
 ```sh
 dleplugin hosts up                                 # build and start the stack
@@ -60,12 +58,12 @@ work from any directory.
 
 ## Where things are stored
 
-- Hosts config: `~/.config/dlehost/config.yml` (overridden by `DLEHOST_CONFIG`).
+- Hosts config: `~/.config/dleplugin/hosts.yml` (overridden by `DLEPLUGIN_HOSTS_CONFIG`).
   Keys: `dists_dir`, `default_dle`, `default_php`, `default_site_offline`, `default_admin_path`, `php_versions`,
   `project_dir`, `base_domain`, `external_origin`, `protect`,
   `protect_session_ttl` (see `dleplugin hosts config --help`).
-- Stack: `~/.local/share/dlehost` (`$XDG_DATA_HOME/dlehost`, or `project_dir`,
-  or `DLEHOST_DIR`, which takes precedence over `project_dir`):
+- Stack: `~/.local/share/dleplugin/hosts` (`$XDG_DATA_HOME/dleplugin/hosts`, or `project_dir`,
+  or `DLEPLUGIN_HOSTS_DIR`, which takes precedence over `project_dir`):
 
   ```text
   .env                 database ports and passwords, UID/GID; created once
@@ -82,8 +80,8 @@ work from any directory.
   ```
 
 `.env` is created on first run. Any of its keys can be preset with
-`DLEHOST_<KEY>`: `COMPOSE_PROJECT_NAME` (docker compose project name and
-container name prefix, default `dle`), `BIND_ADDRESS` (port address, default
+`DLEPLUGIN_HOSTS_<KEY>`: `COMPOSE_PROJECT_NAME` (docker compose project name and
+container name prefix, default `dleplugin-hosts`), `BIND_ADDRESS` (port address, default
 `0.0.0.0`), `HTTP_PORT`, `DB_PORT`, database passwords, `UID`/`GID`. Values are
 written literally (no `${…}` interpolation); single quotes and line breaks are
 rejected. The file mode is `0600`. When run as root, `UID`/`GID` default to
@@ -91,9 +89,9 @@ rejected. The file mode is `0600`. When run as root, `UID`/`GID` default to
 stack next to the main one, for example for tests:
 
 ```sh
-export DLEHOST_CONFIG=/tmp/hosts-test/config.yml DLEHOST_DIR=/tmp/hosts-test/stack
-export DLEHOST_COMPOSE_PROJECT_NAME=hosts-test DLEHOST_BIND_ADDRESS=127.0.0.1
-export DLEHOST_HTTP_PORT=18080 DLEHOST_DB_PORT=13307
+export DLEPLUGIN_HOSTS_CONFIG=/tmp/hosts-test/config.yml DLEPLUGIN_HOSTS_DIR=/tmp/hosts-test/stack
+export DLEPLUGIN_HOSTS_COMPOSE_PROJECT_NAME=hosts-test DLEPLUGIN_HOSTS_BIND_ADDRESS=127.0.0.1
+export DLEPLUGIN_HOSTS_HTTP_PORT=18080 DLEPLUGIN_HOSTS_DB_PORT=13307
 dleplugin hosts up
 ```
 
@@ -243,7 +241,7 @@ No redirect or alias remains at the old address after success.
 ### Administrator credentials
 
 The administrator login and password come from `--admin-login`,
-`--admin-password`, or `DLEHOST_ADMIN_LOGIN`, `DLEHOST_ADMIN_PASSWORD`. For
+`--admin-password`, or `DLEPLUGIN_HOSTS_ADMIN_LOGIN`, `DLEPLUGIN_HOSTS_ADMIN_PASSWORD`. For
 each value: flag, then environment variable, then `admin`. The variables are
 read from the process environment, not from the stack `.env`. Empty values are
 rejected. The login is up to 40 bytes (letters, digits, `_`, `.`, `-`), the
@@ -268,7 +266,7 @@ restored. `remove` only removes hosts created by `add` (the registry is
 
 A host can be closed entirely by a separate HTML login form: without login any
 site address (pages, `admin.php`, static files, missing paths) redirects with
-`302` to `/__dlehost/login?return=<original path>`. After login the browser
+`302` to `/__dleplugin/login?return=<original path>`. After login the browser
 returns to the original local path. This is a regular cookie form, not HTTP
 Basic Auth.
 
@@ -288,7 +286,7 @@ dleplugin hosts add stage --protect on     # mode on creation: default, on, off
 dleplugin hosts config set protect_session_ttl 30d   # session lifetime; never: no expiry
 ```
 
-Log out at `/__dlehost/logout` on the site.
+Log out at `/__dleplugin/logout` on the site.
 
 **Password.** It is unrelated to DLE accounts: the form has a single password
 field and does not touch the site database. The shared password applies to
@@ -303,7 +301,7 @@ or flag.
 bcrypt hashes (cost 10, compatible with PHP `password_verify`) are stored in
 `data/protect/passwords.json`. Plain passwords are never written to files,
 the config or the registry. PHP sees `data/protect` read-only as
-`/opt/dlehost/protect`; the JSON is replaced atomically without restarting
+`/opt/dleplugin/hosts/protect`; the JSON is replaced atomically without restarting
 PHP. Enabling the form without a valid password is refused before the host
 changes.
 
@@ -325,14 +323,14 @@ Turning the form off and shortening the lifetime also remove sessions.
 **How it works.** The vhost `60-host-<name>.conf` of a closed host gets a
 vhost-level mod_rewrite rule that runs before `.htaccess` is read and sends
 requests without a valid session to the form (`gate/gate.php`, mounted at
-`/opt/dlehost/gate`). Site `.htaccess` rules cannot cancel it. A session is
+`/opt/dleplugin/hosts/gate`). Site `.htaccess` rules cannot cancel it. A session is
 valid when the host cookie holds an unexpired lifetime and a random 256-bit
 identifier, and `data/gate/<name>/` has a file
 `sha1(<cookie value>)-v2-sha256(<bcrypt hash>)` holding only the expiry.
 
 - Over HTTPS (`X-Forwarded-Proto: https` from the proxy) only the `Secure`
-  cookie `__Host-dlehost_gate` is issued and accepted; over HTTP only
-  `dlehost_gate`.
+  cookie `__Host-dleplugin_hosts_gate` is issued and accepted; over HTTP only
+  `dleplugin_hosts_gate`.
 - The cookie is host-only, `HttpOnly`, `SameSite=Lax`, `Path=/`.
 - CSRF: the login form uses a double-submit token and `Origin` /
   `Sec-Fetch-Site` checks; logout is POST-only with a token derived from the
@@ -380,15 +378,6 @@ the backend private (`BIND_ADDRESS=127.0.0.1`). Unknown domains get
 `403 Unknown host` from `05-fallback.conf` without running PHP. Do not put your
 own vhosts before `05-fallback.conf`.
 
-## Moving from dlehost
-
-`dleplugin hosts` replaces the `dlehost` binary and uses the same config file,
-stack directory, `DLEHOST_*` variables, registry and password store, so
-existing sites, databases and settings are picked up as they are. The embedded
-stack files were translated to English, so the first command reports that the
-stack files were updated; run `dleplugin hosts up` once to apply them. Sites
-and data are not touched.
-
 ## Development checks
 
 `go test ./...` does not touch running containers. The Docker tests use their
@@ -396,8 +385,8 @@ own temporary stacks and are skipped by default:
 
 ```sh
 DLEPLUGIN_DOCKER_TEST=1 go test ./internal/modules/hosts/internal/host -run '^TestGateDocker$' -v
-DLEHOST_TEST_DLE21=/absolute/path/to/21.0.zip \
+DLEPLUGIN_HOSTS_TEST_DLE21=/absolute/path/to/21.0.zip \
   go test ./internal/modules/hosts/internal/host -run '^TestInstallerDocker$' -v -timeout 20m
-DLEHOST_TEST_DISTS=/path/to/dists \
+DLEPLUGIN_HOSTS_TEST_DISTS=/path/to/dists \
   go test ./internal/modules/hosts/internal/host -run '^TestInstallerMatrix$' -v -timeout 20m
 ```

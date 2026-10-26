@@ -111,8 +111,8 @@ func TestPending(t *testing.T) {
 }
 
 func TestDotEnvDefaultsFromEnvironment(t *testing.T) {
-	t.Setenv("DLEHOST_HTTP_PORT", "8081")
-	t.Setenv("DLEHOST_COMPOSE_PROJECT_NAME", "dle-test")
+	t.Setenv("DLEPLUGIN_HOSTS_HTTP_PORT", "8081")
+	t.Setenv("DLEPLUGIN_HOSTS_COMPOSE_PROJECT_NAME", "dle-test")
 	s, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -124,7 +124,7 @@ func TestDotEnvDefaultsFromEnvironment(t *testing.T) {
 
 func TestDirFromEnvironment(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("DLEHOST_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
 	s, err := Open(filepath.Join(dir, "ignored"))
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestDirFromEnvironment(t *testing.T) {
 
 func TestDotEnvSecrets(t *testing.T) {
 	const password = `p@ss ${UNSET} #x`
-	t.Setenv("DLEHOST_DB_ROOT_PASSWORD", password)
+	t.Setenv("DLEPLUGIN_HOSTS_DB_ROOT_PASSWORD", password)
 	s, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func TestDotEnvSecrets(t *testing.T) {
 		t.Fatalf(".env: mode %o", perm)
 	}
 
-	t.Setenv("DLEHOST_DB_ROOT_PASSWORD", "it's")
+	t.Setenv("DLEPLUGIN_HOSTS_DB_ROOT_PASSWORD", "it's")
 	if _, err := Open(t.TempDir()); err == nil {
 		t.Fatal("value with a single quote accepted")
 	}

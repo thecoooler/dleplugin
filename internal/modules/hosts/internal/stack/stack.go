@@ -29,9 +29,9 @@ type Stack struct {
 }
 
 // Open deploys the embedded stack into dir and reads its .env. The directory
-// is DLEHOST_DIR, then dir, otherwise DefaultDir.
+// is DLEPLUGIN_HOSTS_DIR, then dir, otherwise DefaultDir.
 func Open(dir string) (*Stack, error) {
-	if env := os.Getenv("DLEHOST_DIR"); env != "" {
+	if env := os.Getenv("DLEPLUGIN_HOSTS_DIR"); env != "" {
 		dir = env
 	}
 	if dir == "" {
@@ -100,8 +100,8 @@ func (s *Stack) HostDir(name string) string { return filepath.Join(s.WWWDir(), n
 
 // The protect login form and its sessions inside the apache and php containers.
 const (
-	ContainerGateApp = "/opt/dlehost/gate"
-	ContainerGateDir = "/var/lib/dlehost/gate"
+	ContainerGateApp = "/opt/dleplugin/hosts/gate"
+	ContainerGateDir = "/var/lib/dleplugin/hosts/gate"
 )
 
 // StagingDir is where files of new hosts are prepared outside www/.
@@ -222,7 +222,7 @@ func (s *Stack) CheckGate(phpVersion, name string) error {
 	dir := ContainerGateDir + "/" + name
 	checks := map[string]string{
 		"apache": "test -r " + ContainerGateApp + "/gate.php && test -x " + dir,
-		"php" + strings.ReplaceAll(phpVersion, ".", ""): "test -r " + ContainerGateApp + "/gate.php && test -r /opt/dlehost/protect/passwords.json && test -w " + dir + " && test -x " + dir,
+		"php" + strings.ReplaceAll(phpVersion, ".", ""): "test -r " + ContainerGateApp + "/gate.php && test -r /opt/dleplugin/hosts/protect/passwords.json && test -w " + dir + " && test -x " + dir,
 	}
 	for _, service := range []string{"apache", "php" + strings.ReplaceAll(phpVersion, ".", "")} {
 		if err := s.Compose(nil, "exec", "-T", "-u", "www-data", service, "sh", "-c", checks[service]); err != nil {

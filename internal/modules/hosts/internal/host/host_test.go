@@ -14,8 +14,8 @@ import (
 func isolatedStack(t *testing.T) *stack.Stack {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("DLEHOST_DIR", dir)
-	t.Setenv("DLEHOST_HTTP_PORT", "8090")
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_HTTP_PORT", "8090")
 	bin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte("#!/bin/sh\n"+fakeInstallerPort+"cat >/dev/null\nexit 0\n"), 0755); err != nil {
 		t.Fatal(err)
