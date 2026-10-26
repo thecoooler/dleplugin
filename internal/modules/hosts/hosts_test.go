@@ -40,7 +40,7 @@ func TestHelp(t *testing.T) {
 func TestCredentialPrecedence(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.Flags().String("admin-login", "admin", "")
-	const variable = "DLEHOST_TEST_ADMIN_LOGIN"
+	const variable = "DLEPLUGIN_HOSTS_TEST_ADMIN_LOGIN"
 	t.Setenv(variable, "owner")
 	if got := credentialValue(cmd, "admin-login", "admin", variable); got != "owner" {
 		t.Fatalf("environment: got %q", got)
@@ -61,8 +61,8 @@ func TestCredentialPrecedence(t *testing.T) {
 
 func TestHostSettingsCLI(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("DLEHOST_DIR", dir)
-	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
 	path := filepath.Join(dir, "www/shop/engine/data/config.php")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
@@ -96,8 +96,8 @@ func TestHostSettingsCLI(t *testing.T) {
 
 func TestHostSettingsArgumentsValidatedBeforeStack(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "stack")
-	t.Setenv("DLEHOST_DIR", dir)
-	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
 	for _, args := range [][]string{
 		{"get", "shop", "unknown"}, {"set", "shop", "unknown", "on"},
 		{"set", "shop", "admin_path", "../admin.php"}, {"set", "shop", "admin_path", ""},
@@ -115,7 +115,7 @@ func TestHostSettingsArgumentsValidatedBeforeStack(t *testing.T) {
 
 func TestOpenStackRouting(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "stack")
-	t.Setenv("DLEHOST_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
 	rt := moduletest.NewEnv(t, "", Module()).RT
 	cfg := &config.Config{BaseDomain: "dle.icooler.opik.net", ExternalOrigin: "https://other.test"}
 	if _, err := openStack(rt, cfg); err == nil {
@@ -144,8 +144,8 @@ func TestComposePassthrough(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("DLEHOST_DIR", filepath.Join(t.TempDir(), "stack"))
-	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", filepath.Join(t.TempDir(), "stack"))
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
 	for _, tc := range []struct {
 		args    []string
 		want    string
@@ -173,8 +173,8 @@ func TestComposePassthrough(t *testing.T) {
 }
 
 func TestDefaultAdminPathCLI(t *testing.T) {
-	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
-	t.Setenv("DLEHOST_DIR", filepath.Join(t.TempDir(), "unused-stack"))
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", filepath.Join(t.TempDir(), "unused-stack"))
 	for _, args := range [][]string{
 		{"config", "get", "default_admin_path"},
 		{"config", "set", "default_admin_path", "control.php"},

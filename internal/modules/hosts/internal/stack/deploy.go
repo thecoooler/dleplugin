@@ -27,22 +27,22 @@ var stackFS embed.FS
 const (
 	stackRoot = "files"
 	// stackManifest holds the hash of the service files and their list.
-	stackManifest = ".dlehost-stack"
+	stackManifest = ".dleplugin-hosts-stack"
 	// stackApplied holds the hash of the service files the last hosts up
 	// ran with.
-	stackApplied = ".dlehost-applied"
+	stackApplied = ".dleplugin-hosts-applied"
 )
 
-// DefaultDir is $XDG_DATA_HOME/dlehost, by default ~/.local/share/dlehost.
+// DefaultDir is $XDG_DATA_HOME/dleplugin/hosts, by default ~/.local/share/dleplugin/hosts.
 func DefaultDir() (string, error) {
 	if dir := os.Getenv("XDG_DATA_HOME"); dir != "" {
-		return filepath.Join(dir, "dlehost"), nil
+		return filepath.Join(dir, "dleplugin", "hosts"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".local", "share", "dlehost"), nil
+	return filepath.Join(home, ".local", "share", "dleplugin", "hosts"), nil
 }
 
 type stackFile struct {
@@ -173,9 +173,9 @@ func readStackManifest(p string) (hash string, files []string, err error) {
 // defaultDotEnv lists the keys of a new .env in order; "" is an empty line, "#…" a comment.
 var defaultDotEnv = []struct{ key, value string }{
 	{"#", "Created by dleplugin hosts; not overwritten on updates"},
-	{"#", "Defaults of a new .env can be set with DLEHOST_<KEY> variables"},
+	{"#", "Defaults of a new .env can be set with DLEPLUGIN_HOSTS_<KEY> variables"},
 	{"#", "docker compose project name and container name prefix"},
-	{"COMPOSE_PROJECT_NAME", "dle"},
+	{"COMPOSE_PROJECT_NAME", "dleplugin-hosts"},
 	{"MARIADB_VERSION", "11.4"},
 	{"", ""},
 	{"#", "Address of the apache and MariaDB ports; 127.0.0.1 allows this machine only"},
@@ -222,9 +222,9 @@ func writeDefaultDotEnv(p string) error {
 		case "GID":
 			value = strconv.Itoa(gid)
 		}
-		if v, ok := os.LookupEnv("DLEHOST_" + kv.key); ok {
+		if v, ok := os.LookupEnv("DLEPLUGIN_HOSTS_" + kv.key); ok {
 			if value, err = dotEnvValue(v); err != nil {
-				return fmt.Errorf("DLEHOST_%s: %w", kv.key, err)
+				return fmt.Errorf("DLEPLUGIN_HOSTS_%s: %w", kv.key, err)
 			}
 		}
 		b.WriteString(kv.key + "=" + value + "\n")

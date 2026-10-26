@@ -1,4 +1,4 @@
-// Package hostconfig holds the hosts settings in ~/.config/dlehost/config.yml.
+// Package hostconfig holds the hosts settings in ~/.config/dleplugin/hosts.yml.
 package hostconfig
 
 import (
@@ -16,8 +16,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the hosts settings, stored in ~/.config/dlehost/config.yml
-// (the path can be overridden with DLEHOST_CONFIG).
+// Config is the hosts settings, stored in ~/.config/dleplugin/hosts.yml
+// (the path can be overridden with DLEPLUGIN_HOSTS_CONFIG).
 type Config struct {
 	BaseDomain         string   `yaml:"base_domain"`
 	ExternalOrigin     string   `yaml:"external_origin"`
@@ -62,7 +62,7 @@ var Keys = map[string]Key{
 		},
 	},
 	"project_dir": {
-		Help: "directory of the Docker stack, sites and databases (empty: ~/.local/share/dlehost; DLEHOST_DIR takes precedence)",
+		Help: "directory of the Docker stack, sites and databases (empty: ~/.local/share/dleplugin/hosts; DLEPLUGIN_HOSTS_DIR takes precedence)",
 		Get:  func(c *Config) string { return c.ProjectDir },
 		Set: func(c *Config, v string) error {
 			p, err := absPath(v)
@@ -175,14 +175,14 @@ func defaultConfig() *Config {
 
 // Path returns the config file path.
 func Path() (string, error) {
-	if p := os.Getenv("DLEHOST_CONFIG"); p != "" {
+	if p := os.Getenv("DLEPLUGIN_HOSTS_CONFIG"); p != "" {
 		return p, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "dlehost", "config.yml"), nil
+	return filepath.Join(home, ".config", "dleplugin", "hosts.yml"), nil
 }
 
 // Load reads the config; a missing file yields the defaults.

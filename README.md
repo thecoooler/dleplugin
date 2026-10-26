@@ -316,8 +316,7 @@ The exit code is 1 when a patch does not apply to some directory.
 Runs DLE sites in a local Docker stack (Apache, PHP 8.5/7.4, MariaDB) built
 from files embedded in the binary: creates sites from clean DLE distributions
 through the standard installer, puts an optional password form in front of
-them, and changes the shared HTTP port. It replaces the standalone `dlehost`
-CLI and keeps its config and data. See [DLE hosts](docs/hosts.md).
+them, and changes the shared HTTP port. See [DLE hosts](docs/hosts.md).
 
 ```sh
 dleplugin hosts up

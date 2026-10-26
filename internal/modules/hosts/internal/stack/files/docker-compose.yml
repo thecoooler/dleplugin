@@ -1,4 +1,4 @@
-name: dle
+name: dleplugin-hosts
 
 x-php: &php
   restart: unless-stopped

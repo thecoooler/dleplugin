@@ -29,9 +29,9 @@ type Stack struct {
 }
 
 // Open deploys the embedded stack into dir and reads its .env. The directory
-// is DLEHOST_DIR, then dir, otherwise DefaultDir.
+// is DLEPLUGIN_HOSTS_DIR, then dir, otherwise DefaultDir.
 func Open(dir string) (*Stack, error) {
-	if env := os.Getenv("DLEHOST_DIR"); env != "" {
+	if env := os.Getenv("DLEPLUGIN_HOSTS_DIR"); env != "" {
 		dir = env
 	}
 	if dir == "" {

@@ -12,7 +12,7 @@ import (
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/stack"
 )
 
-const fakeInstallerPort = `if [ "$1" = port ]; then printf '%s\n' "$DLEHOST_TEST_INSTALL_ADDRESS"; exit 0; fi
+const fakeInstallerPort = `if [ "$1" = port ]; then printf '%s\n' "$DLEPLUGIN_HOSTS_TEST_INSTALL_ADDRESS"; exit 0; fi
 `
 
 // Unit tests use a fake Docker executable and this HTTP peer. It writes only
@@ -64,7 +64,7 @@ func serveTestInstaller(t *testing.T, s *stack.Stack) {
 		}
 	}))
 	t.Cleanup(server.Close)
-	t.Setenv("DLEHOST_TEST_INSTALL_ADDRESS", strings.TrimPrefix(server.URL, "http://"))
+	t.Setenv("DLEPLUGIN_HOSTS_TEST_INSTALL_ADDRESS", strings.TrimPrefix(server.URL, "http://"))
 }
 
 // Minimal web installer for host integration fixtures. The production installer

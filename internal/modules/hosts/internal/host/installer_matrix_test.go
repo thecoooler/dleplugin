@@ -12,11 +12,11 @@ import (
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/dist"
 )
 
-// DLEHOST_TEST_DISTS=/path/to/dists go test ./internal/modules/hosts/internal/host -run TestInstallerMatrix -v -timeout 20m
+// DLEPLUGIN_HOSTS_TEST_DISTS=/path/to/dists go test ./internal/modules/hosts/internal/host -run TestInstallerMatrix -v -timeout 20m
 func TestInstallerMatrix(t *testing.T) {
-	dir := os.Getenv("DLEHOST_TEST_DISTS")
+	dir := os.Getenv("DLEPLUGIN_HOSTS_TEST_DISTS")
 	if dir == "" {
-		t.Skip("set DLEHOST_TEST_DISTS to licensed clean distributions")
+		t.Skip("set DLEPLUGIN_HOSTS_TEST_DISTS to licensed clean distributions")
 	}
 	versions, err := dist.List(dir)
 	if err != nil {
