@@ -70,6 +70,34 @@ if (!$posts['n']) exit(5);
 			}
 			client := &gateClient{t: t, base: "http://127.0.0.1:" + s.HTTPPort(), http: &http.Client{Timeout: 20 * time.Second,
 				CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+			for _, adminPath := range []string{"control-test.php", "admin.php"} {
+				previous, err := GetSetting(s, name, "admin_path")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := SetSetting(s, name, "admin_path", adminPath); err != nil {
+					t.Fatal(err)
+				}
+				if got, err := GetSetting(s, name, "admin_path"); err != nil || got != adminPath {
+					t.Fatalf("admin_path: %s %v", got, err)
+				}
+				admin := client.do(result.Host.Domain(), "GET", "/"+adminPath, nil, nil)
+				if admin.code != 200 || !strings.Contains(admin.body, `name="username"`) || strings.Contains(admin.body, "Fatal error") {
+					t.Fatalf("admin %s: HTTP %d %.1500s", adminPath, admin.code, admin.body)
+				}
+				// DLE submits its login form to the current URL (action="").
+				runtimeCheck := fmt.Sprintf("<?php define('DATALIFEENGINE', true); require '/var/www/%s/engine/data/config.php'; if ($config['admin_path'] !== '%s' || !is_file('/var/www/%s/' . $config['admin_path'])) exit(2);", name, adminPath, name)
+				if err := s.Compose(strings.NewReader(runtimeCheck), "exec", "-T", "php"+strings.ReplaceAll(php, ".", ""), "php"); err != nil {
+					t.Fatal(err)
+				}
+				old := client.do(result.Host.Domain(), "GET", "/"+previous, nil, nil)
+				if old.code == 200 && strings.Contains(old.body, `name="username"`) {
+					t.Fatalf("old admin still available: %s", previous)
+				}
+				if got, err := GetSetting(s, name, "site_offline"); err != nil || got != "on" {
+					t.Fatalf("maintenance changed: %s %v", got, err)
+				}
+			}
 			resp := client.do(result.Host.Domain(), "GET", "/", nil, nil)
 			// Older DLE versions serve their maintenance page with HTTP 200.
 			if resp.code != 200 && resp.code != 503 || !strings.Contains(resp.body, "Сайт находится на текущей реконструкции") || strings.Contains(resp.body, "Fatal error") {

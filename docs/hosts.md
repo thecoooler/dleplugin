@@ -192,11 +192,39 @@ precedence over the configured default.
 `hosts get NAME KEY` and `hosts set NAME KEY VALUE` read and update the host's
 DLE configuration directly, so changes from the DLE admin UI are visible.
 They also work for DLE directories under `www/` that were not created by
-`hosts add`. Currently the supported key is `site_offline`, with values
-`on` (closed) and `off` (open); unknown keys and values are rejected. No Docker
-restart is required. Missing, invalid or duplicate settings are reported as
-errors without rewriting the configuration. Additional host settings can
-be added to these commands in the future.
+`hosts add`. Supported keys are `site_offline`, with values `on` (closed) and
+`off` (open), and `admin_path` (the administrator PHP filename). Unknown keys
+and values are rejected. No Docker restart is required. Missing, invalid or
+duplicate settings are reported as errors without rewriting the configuration.
+
+### Administrator address
+
+```bash
+dleplugin hosts get shop admin_path                # e.g. admin.php
+dleplugin hosts set shop admin_path control.php    # rename the current entry point
+dleplugin hosts set shop admin_path admin.php      # restore the default
+```
+
+`admin_path` matches the DLE configuration key used by DLE 11.0–21.0. The
+command reads the current filename from `engine/data/config.php`, including
+manual changes, and moves that file while updating only the setting's value.
+Use a filename ending in lowercase `.php`, starting with an ASCII letter or
+digit; the remaining stem may contain ASCII letters, digits, `_` and `-`
+(maximum 255 bytes including `.php`). Paths, URLs and query strings are rejected.
+
+The current entry point and config must be regular files, not symlinks. Any
+existing destination (including directories and dangling symlinks) is a collision;
+for example, `index.php` is never overwritten. Setting the current filename again
+is a no-op after checking the source. The PHP contents, ownership and permissions
+are preserved; config quoting, line endings, unrelated values and permissions
+are preserved too. `site_offline` is unchanged, as are all other hosts.
+
+The complete config is staged before changing files and replaced atomically;
+if committing it fails, the old entry point is restored. The filesystem must
+support hard links within the host directory. This is a two-file operation:
+avoid concurrent config edits or requests during the brief change, and do not
+interrupt it. A process/system crash between file operations is not transactional.
+No redirect or alias remains at the old address after success.
 
 ### Administrator credentials
 

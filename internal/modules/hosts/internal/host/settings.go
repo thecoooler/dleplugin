@@ -15,6 +15,9 @@ func ValidateSetting(key, value string) error {
 	if err := ValidateSettingKey(key); err != nil {
 		return err
 	}
+	if key == "admin_path" {
+		return validateAdminPath(value)
+	}
 	if value != "on" && value != "off" {
 		return fmt.Errorf("%s: use on or off", key)
 	}
@@ -23,8 +26,8 @@ func ValidateSetting(key, value string) error {
 
 // ValidateSettingKey checks whether a host setting is supported.
 func ValidateSettingKey(key string) error {
-	if key != "site_offline" {
-		return fmt.Errorf("unknown host setting %q, available: site_offline", key)
+	if key != "site_offline" && key != "admin_path" {
+		return fmt.Errorf("unknown host setting %q, available: admin_path, site_offline", key)
 	}
 	return nil
 }
@@ -37,6 +40,10 @@ func GetSetting(s *stack.Stack, name, key string) (string, error) {
 	dir, err := Path(s, name, false)
 	if err != nil {
 		return "", err
+	}
+	if key == "admin_path" {
+		_, _, value, err := readAdminPath(dir)
+		return value, err
 	}
 	data, match, err := readSiteOffline(dir)
 	if err != nil {
@@ -58,6 +65,9 @@ func SetSetting(s *stack.Stack, name, key, value string) error {
 	dir, err := Path(s, name, false)
 	if err != nil {
 		return err
+	}
+	if key == "admin_path" {
+		return setAdminPath(dir, value, os.Rename)
 	}
 	return setSiteOffline(dir, value)
 }
