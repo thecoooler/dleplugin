@@ -578,6 +578,8 @@ func TestDeployPasswordsStayWithTheirSite(t *testing.T) {
 		t.Fatal("password retained after unchoosing the site")
 	}
 	f.setPassword(first, "secret")
+	// Redraw after changing form state so Cancel uses its current position.
+	e.tt.Frame()
 	e.click("Cancel")
 	if e.app.deployOpen || f.passwords != nil {
 		t.Fatal("password retained after closing the dialog")
