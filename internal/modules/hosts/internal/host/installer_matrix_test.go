@@ -71,7 +71,7 @@ if (!$posts['n']) exit(5);
 			if err := s.Compose(strings.NewReader(check), "exec", "-T", "php"+strings.ReplaceAll(php, ".", ""), "php", "-d", "display_errors=stderr"); err != nil {
 				t.Fatal(err)
 			}
-			client := &gateClient{t: t, base: "http://127.0.0.1:" + s.HTTPPort(), http: &http.Client{Timeout: 20 * time.Second,
+			client := &testHTTPClient{t: t, base: "http://127.0.0.1:" + s.HTTPPort(), http: &http.Client{Timeout: 20 * time.Second,
 				CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 			for _, adminPath := range []string{"control-test.php", "admin.php"} {
 				previous, err := GetSetting(s, name, "admin_path")

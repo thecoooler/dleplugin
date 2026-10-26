@@ -21,9 +21,6 @@ dleplugin hosts add public --site-offline off       # create an open site
 dleplugin hosts get shop site_offline               # on: closed, off: open
 dleplugin hosts set shop site_offline off           # open an existing site
 dleplugin hosts set shop site_offline on            # close an existing site
-dleplugin hosts protect password                   # set the shared login form password
-dleplugin hosts add stage --protect on             # site only after the protect password
-dleplugin hosts protect shop on                    # login form for an existing host
 dleplugin hosts list
 dleplugin hosts path shop                          # host files: <stack>/www/shop
 dleplugin hosts path shop --container              # the same inside the containers: /var/www/shop
@@ -52,8 +49,7 @@ work from any directory.
 > Through external domains php74 is reachable for 7.4 sites. Anyone who can
 > reach the Apache port directly can always reach php74: the
 > `*.php74.localhost` auto host is selected by the `Host` header even when no
-> site uses 7.4. The `protect` login form does not help: the vulnerability
-> triggers before the script runs. Keep `BIND_ADDRESS=127.0.0.1`, do not
+> site uses 7.4. Keep `BIND_ADDRESS=127.0.0.1`, do not
 > publish 7.4 sites through external domains, or move them to 8.5. An
 > unofficial 7.4 image with the official php-src patch:
 > [mpyw/php-eol-CVE-2026-109618-109619](https://github.com/mpyw/php-eol-CVE-2026-109618-109619).
@@ -62,8 +58,7 @@ work from any directory.
 
 - Hosts config: `~/.config/dlehost/config.yml` (overridden by `DLEHOST_CONFIG`).
   Keys: `dists_dir`, `default_dle`, `default_php`, `default_site_offline`, `default_admin_path`, `php_versions`,
-  `project_dir`, `base_domain`, `external_origin`, `protect`,
-  `protect_session_ttl` (see `dleplugin hosts config --help`).
+  `project_dir`, `base_domain`, `external_origin` (see `dleplugin hosts config --help`).
 - Stack: `~/.local/share/dlehost` (`$XDG_DATA_HOME/dlehost`, or `project_dir`,
   or `DLEHOST_DIR`, which takes precedence over `project_dir`):
 
@@ -74,10 +69,7 @@ work from any directory.
   www/<name>/          site files
   data/mariadb/        databases
   data/hosts.json      hosts registry
-  data/gate/<name>/    login form sessions (hosts protect)
-  data/protect/passwords.json  bcrypt hashes of the shared and host passwords
   data/staging/        temporary files of add before publishing to www/
-  gate/                login form; service files from the binary
   logs/apache/         Apache logs
   ```
 
@@ -144,9 +136,8 @@ container port is bound to `127.0.0.1` only and picked by Docker. The DLE
 installer creates the tables, administrator, auth key, configuration,
 templates and demo data. Before publishing, the configs, the chosen template
 and the removal of `install.php` are checked; the container is removed. Apache
-gets an already installed site, also with `--protect on`. The domain and
-scheme are passed to the installer, so URLs in the config and demo banners
-match the final address. After installation `allow_alt_url` is enabled for
+gets an already installed site. The domain and scheme are passed to the
+installer, so URLs in the config and demo banners match the final address. After installation `allow_alt_url` is enabled for
 Apache. New sites are closed using DLE's maintenance mode before they are
 published (see below). DLE 11.0–14.2 do not remove `install.php` themselves,
 so the CLI does;
@@ -170,8 +161,7 @@ On error everything created is rolled back.
 
 New hosts default to `site_offline = 1` in `engine/data/config.php`. Guests
 see DLE's maintenance page; administrators and groups with DLE's offline
-access permission retain access. The separate `hosts protect` login form
-continues to apply when enabled.
+access permission retain access.
 
 ```sh
 dleplugin hosts config get default_site_offline    # on by default (site closed)
@@ -264,96 +254,6 @@ restored. `remove` only removes hosts created by `add` (the registry is
 `cd "$(dleplugin hosts path shop)"`. It works for any directory in `www/`.
 `www/` is mounted into the apache and php containers as `/var/www`.
 
-## Login form in front of a site (`protect`)
-
-A host can be closed entirely by a separate HTML login form: without login any
-site address (pages, `admin.php`, static files, missing paths) redirects with
-`302` to `/__dlehost/login?return=<original path>`. After login the browser
-returns to the original local path. This is a regular cookie form, not HTTP
-Basic Auth.
-
-```sh
-dleplugin hosts protect                    # settings and which passwords are set
-dleplugin hosts protect password           # set or change the shared password
-dleplugin hosts protect shop password      # set or change the password of shop only
-dleplugin hosts protect shop password --default  # return shop to the shared password
-dleplugin hosts protect on                 # global on: hosts in the default mode are closed
-dleplugin hosts protect off                # global off (default)
-dleplugin hosts protect shop on            # shop is closed whatever the global setting
-dleplugin hosts protect shop off           # shop is open whatever the global setting
-dleplugin hosts protect shop default       # shop follows the global setting again
-dleplugin hosts protect shop reset         # end all form sessions of shop
-dleplugin hosts protect reset              # end the sessions of all hosts
-dleplugin hosts add stage --protect on     # mode on creation: default, on, off
-dleplugin hosts config set protect_session_ttl 30d   # session lifetime; never: no expiry
-```
-
-Log out at `/__dlehost/logout` on the site.
-
-**Password.** It is unrelated to DLE accounts: the form has a single password
-field and does not touch the site database. The shared password applies to
-all closed hosts without their own one. The form mode (`default/on/off`) and
-the password source are independent. The CLI reads the password from the
-terminal without echo and asks to repeat it; when stdin is not a terminal it
-reads one line without confirmation (the trailing LF/CRLF is stripped, spaces
-are kept). 1 to 72 bytes are allowed (the bcrypt limit); empty, multi-line
-passwords and NUL are rejected. The password cannot be passed as an argument
-or flag.
-
-bcrypt hashes (cost 10, compatible with PHP `password_verify`) are stored in
-`data/protect/passwords.json`. Plain passwords are never written to files,
-the config or the registry. PHP sees `data/protect` read-only as
-`/opt/dlehost/protect`; the JSON is replaced atomically without restarting
-PHP. Enabling the form without a valid password is refused before the host
-changes.
-
-**Session lifetime** is `protect_session_ttl`, shared by all hosts:
-
-| value | server | browser cookie |
-|---|---|---|
-| `never` (default; also empty, `0`, `unlimited`) | never expires | 400 days |
-| `30d`, `12h`, `90m` (from `1m` to `36500d`) | expires after the lifetime | the same, at most 400 days |
-
-The expiry is part of the cookie value and checked by Apache on every request;
-it cannot be forged because the session file is bound to the whole value.
-When the lifetime gets shorter, all sessions of closed hosts are removed.
-
-**Revoking access.** Changing the shared password ends the sessions of hosts
-using it; changing or resetting a host password ends only its sessions.
-Turning the form off and shortening the lifetime also remove sessions.
-
-**How it works.** The vhost `60-host-<name>.conf` of a closed host gets a
-vhost-level mod_rewrite rule that runs before `.htaccess` is read and sends
-requests without a valid session to the form (`gate/gate.php`, mounted at
-`/opt/dlehost/gate`). Site `.htaccess` rules cannot cancel it. A session is
-valid when the host cookie holds an unexpired lifetime and a random 256-bit
-identifier, and `data/gate/<name>/` has a file
-`sha1(<cookie value>)-v2-sha256(<bcrypt hash>)` holding only the expiry.
-
-- Over HTTPS (`X-Forwarded-Proto: https` from the proxy) only the `Secure`
-  cookie `__Host-dlehost_gate` is issued and accepted; over HTTP only
-  `dlehost_gate`.
-- The cookie is host-only, `HttpOnly`, `SameSite=Lax`, `Path=/`.
-- CSRF: the login form uses a double-submit token and `Origin` /
-  `Sec-Fetch-Site` checks; logout is POST-only with a token derived from the
-  session.
-- Brute force: at most 20 failed attempts in 15 minutes per host, then `429`.
-- The auto host addresses of the same directory (`<name>.localhost`,
-  `<name>.php74.localhost`, `<name>.*.localhost`) are taken over by the closed
-  vhost and also lead to the form.
-
-**Applying and rollback.** Password, `protect` and `config set protect*`
-changes rewrite the affected vhosts, check that the containers see the form and
-session directory, run `apache2ctl configtest` and `graceful`, and only then save
-the registry or config. On error the previous vhosts and hashes are restored.
-The stack must be running. After a binary update run `dleplugin hosts up`
-first: new mounts exist only in recreated containers.
-
-**Limits.** Only registry hosts can be closed. All sites share the PHP
-containers and user: the code of another site can read files of a closed one.
-The form protects against visitors, not against neighbouring site code. The
-container user (`UID`/`GID` in `.env`) must own `data/gate`.
-
 ## Public hosts behind a reverse proxy
 
 With `base_domain` and `external_origin` new hosts get public addresses:
@@ -395,7 +295,6 @@ and data are not touched.
 own temporary stacks and are skipped by default:
 
 ```sh
-DLEPLUGIN_DOCKER_TEST=1 go test ./internal/modules/hosts/internal/host -run '^TestGateDocker$' -v
 DLEHOST_TEST_DLE21=/absolute/path/to/21.0.zip \
   go test ./internal/modules/hosts/internal/host -run '^TestInstallerDocker$' -v -timeout 20m
 DLEHOST_TEST_DISTS=/path/to/dists \

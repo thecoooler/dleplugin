@@ -98,17 +98,8 @@ const ContainerWWWDir = "/var/www"
 
 func (s *Stack) HostDir(name string) string { return filepath.Join(s.WWWDir(), name) }
 
-// The protect login form and its sessions inside the apache and php containers.
-const (
-	ContainerGateApp = "/opt/dlehost/gate"
-	ContainerGateDir = "/var/lib/dlehost/gate"
-)
-
 // StagingDir is where files of new hosts are prepared outside www/.
 func (s *Stack) StagingDir() string { return filepath.Join(s.Dir, "data", "staging") }
-
-// GateDir is the login form session directory of a host (data/gate/<name>).
-func (s *Stack) GateDir(name string) string { return filepath.Join(s.Dir, "data", "gate", name) }
 
 // Domain returns the domain of a new managed host.
 func (s *Stack) Domain(name string) string {
@@ -213,23 +204,6 @@ func (s *Stack) ReloadApache() error {
 		return err
 	}
 	return s.Compose(nil, "exec", "-T", "apache", "apache2ctl", "graceful")
-}
-
-// CheckGate checks as www-data that the running apache and php<ver> see the
-// login form and the session directory of host name, and that php can write
-// to it. Without hosts up after a binary update the mounts do not exist yet.
-func (s *Stack) CheckGate(phpVersion, name string) error {
-	dir := ContainerGateDir + "/" + name
-	checks := map[string]string{
-		"apache": "test -r " + ContainerGateApp + "/gate.php && test -x " + dir,
-		"php" + strings.ReplaceAll(phpVersion, ".", ""): "test -r " + ContainerGateApp + "/gate.php && test -r /opt/dlehost/protect/passwords.json && test -w " + dir + " && test -x " + dir,
-	}
-	for _, service := range []string{"apache", "php" + strings.ReplaceAll(phpVersion, ".", "")} {
-		if err := s.Compose(nil, "exec", "-T", "-u", "www-data", service, "sh", "-c", checks[service]); err != nil {
-			return fmt.Errorf("container %s does not see the login form or the session directory %s (run dleplugin hosts up; data/gate must be owned by the UID from .env): %w", service, dir, err)
-		}
-	}
-	return nil
 }
 
 // SetDotEnv changes (or adds) KEY=VALUE in .env, keeping the other lines.
