@@ -318,6 +318,7 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 				PHPVersions: cfg.PHPVersions,
 				DistsDir:    cfg.DistsDir,
 				Admin:       credentials,
+				AdminPath:   cfg.AdminPath(),
 				SiteOffline: siteOffline,
 				Protect:     protect,
 				Settings:    protectSettings(cfg),
@@ -325,10 +326,14 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			adminPath, err := host.GetSetting(s, res.Host.Name, "admin_path")
+			if err != nil {
+				return err
+			}
 			rt.UI.Info("")
 			rt.UI.Successf("Host %s created (DLE %s, PHP %s)", res.Host.Name, res.Host.DLE, res.Host.PHP)
 			rt.UI.Info("URL:      " + res.URL)
-			rt.UI.Info("Admin:    " + res.URL + "admin.php")
+			rt.UI.Info("Admin:    " + res.URL + adminPath)
 			rt.UI.Info("Login:    " + credentials.Login)
 			rt.UI.Info("Protect:  " + protectState(res.Host, cfg.Protect))
 			rt.UI.Info("Offline:  " + siteOffline)
@@ -351,8 +356,8 @@ func getCmd(rt *app.Runtime) *cobra.Command {
 	return &cobra.Command{
 		Use:     "get NAME KEY",
 		Short:   "Read a host setting from DLE",
-		Long:    "Read a host setting from DLE. Available keys: site_offline (on: site closed, off: site open).",
-		Example: "  dleplugin hosts get shop site_offline",
+		Long:    "Read a host setting from DLE. Available keys: site_offline (on: site closed, off: site open), admin_path (PHP filename, e.g. panel.php).",
+		Example: "  dleplugin hosts get shop site_offline\n  dleplugin hosts get shop admin_path",
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Validate the key before preparing the stack.
@@ -377,8 +382,8 @@ func setCmd(rt *app.Runtime) *cobra.Command {
 	return &cobra.Command{
 		Use:     "set NAME KEY VALUE",
 		Short:   "Change a host setting in DLE",
-		Long:    "Change a host setting in DLE. Available keys: site_offline (on: site closed, off: site open).\nAdministrators retain access while the site is closed.",
-		Example: "  dleplugin hosts set shop site_offline on\n  dleplugin hosts set shop site_offline off",
+		Long:    "Change a host setting in DLE. Available keys: site_offline (on: site closed, off: site open), admin_path (PHP filename, e.g. panel.php).\nAdministrators retain access while the site is closed.\nSetting admin_path renames the current admin PHP file and updates DLE configuration. Use admin.php to restore the default.",
+		Example: "  dleplugin hosts set shop site_offline on\n  dleplugin hosts set shop site_offline off\n  dleplugin hosts set shop admin_path panel.php\n  dleplugin hosts set shop admin_path admin.php",
 		Args:    cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := host.ValidateSetting(args[1], args[2]); err != nil {

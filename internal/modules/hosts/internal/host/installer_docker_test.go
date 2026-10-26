@@ -84,6 +84,13 @@ echo 'verified';
 			client := &gateClient{t: t, base: "http://127.0.0.1:" + s.HTTPPort(), http: &http.Client{Timeout: 20 * time.Second,
 				CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 			if external {
+				if err := SetSetting(s, name, "admin_path", "control-test.php"); err != nil {
+					t.Fatal(err)
+				}
+				client.expectGate(result.Host.Domain(), "/control-test.php")
+				if err := SetSetting(s, name, "admin_path", "admin.php"); err != nil {
+					t.Fatal(err)
+				}
 				client.expectGate(result.Host.Domain(), "/")
 			} else {
 				resp := client.do(result.Host.Domain(), "GET", "/", nil, nil)

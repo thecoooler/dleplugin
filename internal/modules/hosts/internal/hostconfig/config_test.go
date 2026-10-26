@@ -221,3 +221,52 @@ func TestProtectSessionTTL(t *testing.T) {
 		t.Fatal("invalid TTL in YAML accepted")
 	}
 }
+
+func TestDefaultAdminPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	t.Setenv("DLEHOST_CONFIG", path)
+	key := Keys["default_admin_path"]
+	for _, content := range []string{"", "default_dle: '21.0'\n", "default_admin_path: ''\n"} {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := Load()
+		if err != nil || key.Get(cfg) != "admin.php" {
+			t.Fatalf("old config: %+v %v", cfg, err)
+		}
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"control.php", "admin.php", ""} {
+		if err := key.Set(cfg, value); err != nil {
+			t.Fatal(err)
+		}
+		if err := Save(cfg); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err = Load()
+		want := value
+		if want == "" {
+			want = "admin.php"
+		}
+		if err != nil || key.Get(cfg) != want {
+			t.Fatalf("round trip %q: %+v %v", value, cfg, err)
+		}
+	}
+	for _, bad := range []string{"../admin.php", "control", "/panel.php", "panel.PHP"} {
+		if key.Set(cfg, bad) == nil {
+			t.Fatalf("accepted %q", bad)
+		}
+		if key.Get(cfg) != "admin.php" {
+			t.Fatal("invalid setting changed config")
+		}
+		if err := os.WriteFile(path, []byte("default_admin_path: '"+bad+"'\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(); err == nil {
+			t.Fatalf("accepted invalid YAML default %q", bad)
+		}
+	}
+}

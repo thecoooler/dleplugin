@@ -69,8 +69,21 @@ func TestHostSettingsCLI(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("<?php $config = array('site_offline' => '0');"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("<?php $config = array('site_offline' => '0', 'admin_path' => 'admin.php');"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "www/shop/admin.php"), []byte("<?php echo 'admin';"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"panel.php", "admin.php"} {
+		e := moduletest.NewEnv(t, "", Module())
+		if code := e.Run("hosts", "set", "shop", "admin_path", value); code != 0 || !strings.Contains(e.Out.String(), "admin_path = "+value) {
+			t.Fatalf("set %s: %s %s", value, e.Out.String(), e.ErrB.String())
+		}
+		e = moduletest.NewEnv(t, "", Module())
+		if code := e.Run("hosts", "get", "shop", "admin_path"); code != 0 || strings.TrimSpace(e.Out.String()) != value {
+			t.Fatalf("get admin_path: %s %s", e.Out.String(), e.ErrB.String())
+		}
 	}
 	for _, value := range []string{"on", "off"} {
 		if code, msg := run(t, "", "set", "shop", "site_offline", value); code != 0 {
@@ -89,6 +102,7 @@ func TestHostSettingsArgumentsValidatedBeforeStack(t *testing.T) {
 	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
 	for _, args := range [][]string{
 		{"get", "shop", "unknown"}, {"set", "shop", "unknown", "on"},
+		{"set", "shop", "admin_path", "../admin.php"}, {"set", "shop", "admin_path", ""},
 		{"set", "shop", "site_offline", "yes"}, {"set", "shop", "site_offline", ""},
 		{"add", "shop", "--site-offline", "yes"}, {"add", "shop", "--site-offline="},
 	} {
@@ -234,6 +248,29 @@ func TestComposePassthrough(t *testing.T) {
 		}
 		if e.RT.UI.Verbose() != tc.verbose {
 			t.Errorf("%v: verbose = %v", tc.args, e.RT.UI.Verbose())
+		}
+	}
+}
+
+func TestDefaultAdminPathCLI(t *testing.T) {
+	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	t.Setenv("DLEHOST_DIR", filepath.Join(t.TempDir(), "unused-stack"))
+	for _, args := range [][]string{
+		{"config", "get", "default_admin_path"},
+		{"config", "set", "default_admin_path", "control.php"},
+		{"config", "get", "default_admin_path"},
+		{"config", "unset", "default_admin_path"},
+		{"config", "get", "default_admin_path"},
+	} {
+		e := moduletest.NewEnv(t, "", Module())
+		if code := e.Run(append([]string{"hosts"}, args...)...); code != 0 {
+			t.Fatalf("%v: %s", args, e.ErrB.String())
+		}
+		if args[1] == "get" {
+			cfg, err := config.Load()
+			if err != nil || strings.TrimSpace(e.Out.String()) != cfg.AdminPath() {
+				t.Fatalf("get default: %s %v", e.Out.String(), err)
+			}
 		}
 	}
 }

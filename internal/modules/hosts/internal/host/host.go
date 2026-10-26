@@ -220,6 +220,7 @@ type AddOptions struct {
 	PHPVersions []string // allowed PHP versions
 	DistsDir    string
 	Admin       Credentials
+	AdminPath   string          // desired administrator filename; empty keeps the distribution default
 	SiteOffline string          // on (default, closed) or off (open)
 	Protect     string          // default, on or off
 	Settings    ProtectSettings // global login form settings
@@ -234,6 +235,11 @@ type AddResult struct {
 // Add creates a host from a distribution; everything created is rolled back on error.
 func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) {
 	name, dleVersion, phpVersion := opts.Name, opts.DLE, opts.PHP
+	if opts.AdminPath != "" {
+		if err := ValidateSetting("admin_path", opts.AdminPath); err != nil {
+			return nil, err
+		}
+	}
 	if err := opts.Admin.Validate(); err != nil {
 		return nil, err
 	}
@@ -400,6 +406,12 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 	}
 	if err := setSiteOffline(staging, offline); err != nil {
 		return fail(err)
+	}
+
+	if opts.AdminPath != "" {
+		if err := setAdminPath(staging, opts.AdminPath, os.Rename); err != nil {
+			return fail(err)
+		}
 	}
 
 	log("vhost apache, PHP " + phpVersion)
