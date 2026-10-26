@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/thecoooler/dleplugin/internal/config"
+	"github.com/thecoooler/dleplugin/internal/dockerimg"
 )
 
 // Module is a compiled-in feature contributing top-level commands.
@@ -67,7 +68,8 @@ func NewRootCommand(rt *Runtime, modules ...Module) *cobra.Command {
 	}
 
 	rt.modules = nil
-	reserved := map[string]bool{"help": true}
+	reserved := map[string]bool{"help": true, toolImagesName: true}
+	var images []dockerimg.Image
 
 	counts := map[string]int{}
 	for _, m := range modules {
@@ -100,8 +102,12 @@ func NewRootCommand(rt *Runtime, modules ...Module) *cobra.Command {
 			reserved[c.Name()] = true
 			root.AddCommand(c)
 		}
+		if p, ok := m.(imageProvider); ok {
+			images = append(images, p.Images()...)
+		}
 		rt.modules = append(rt.modules, info)
 	}
+	root.AddCommand(toolImagesCommand(rt, images))
 	addGroups(root)
 	return root
 }

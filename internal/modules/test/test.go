@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/thecoooler/dleplugin/internal/app"
+	"github.com/thecoooler/dleplugin/internal/dockerimg"
 	"github.com/thecoooler/dleplugin/internal/modules/test/internal/dletest"
 	"github.com/thecoooler/dleplugin/internal/plugin"
 )
@@ -23,6 +24,9 @@ func (module) Name() string { return "test" }
 func (module) Commands(rt *app.Runtime) []*cobra.Command {
 	return []*cobra.Command{testCommand(rt)}
 }
+
+// Images returns the image running the DLE installer and Pest.
+func (module) Images() []dockerimg.Image { return []dockerimg.Image{dletest.Image} }
 
 func testCommand(rt *app.Runtime) *cobra.Command {
 	var (

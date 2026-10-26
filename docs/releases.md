@@ -17,6 +17,7 @@ gh run watch "$(gh run list --workflow release.yml --limit 1 --json databaseId -
 
 The Release workflow rejects tags that are not on main, runs the full CI
 (tests, race tests, vulnerability scans, cross builds, image smoke checks),
+publishes missing tool images to GHCR (see [tool images](tool-images.md)),
 then packages with `scripts/release.py`. Packaging builds Linux, macOS and
 Windows for amd64 and arm64, disables CGO, scans every resulting binary, and
 includes README, MIT LICENSE, third-party notices, license texts and

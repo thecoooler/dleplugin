@@ -46,7 +46,8 @@ dleplugin deploy upload example.com --new
 The CLI builds for Linux, macOS and Windows (amd64/arm64). Core commands and
 HTTP deployment use the Go binary; `diff` also needs the system `diff` tool.
 `static` and `test` require a working Docker engine. They use pinned PHP 8.4
-tool images; no local PHP is needed. Deployment requires DLE 13+ and plugin
+tool images, pulled from `ghcr.io/thecoooler` when published and built locally
+otherwise (`DLEPLUGIN_IMAGE_REGISTRY=` disables pulling); no local PHP is needed. Deployment requires DLE 13+ and plugin
 administration permissions; the test runner uses the downloaded current trial.
 The Go tests and image smoke checks run on Linux/macOS in CI; Windows binaries
 are cross-built, and Windows Docker workflows are not covered by integration
@@ -226,7 +227,7 @@ from `example.com` to `www.example.com`); credentials are never forwarded there.
 ### static
 
 `static` runs PHPStan (level max, bleeding edge) inside the `dleplugin-static`
-Docker image, which is built from embedded assets on first use; no local
+Docker image, which is pulled or built from embedded assets on first use; no local
 PHP is needed. Plugin sources, include paths and the shared test Composer
 vendor directory are mounted read-only. Flags: `--json`, `--count`,
 `-t/--tool-verbose`, `--dependency-root` (repeatable),
