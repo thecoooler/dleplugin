@@ -3,10 +3,8 @@
 package hosts
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,7 +13,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"golang.org/x/term"
 
 	"github.com/thecoooler/dleplugin/internal/app"
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/dist"
@@ -50,7 +47,7 @@ stack lives in ~/.local/share/dleplugin/hosts (DLEPLUGIN_HOSTS_DIR or project_di
 		Args: cobra.NoArgs,
 	}
 	cmd.AddCommand(upCmd(rt), downCmd(rt), composeCmd(rt), listCmd(rt), addCmd(rt), removeCmd(rt),
-		protectCmd(rt), getCmd(rt), setCmd(rt), pathCmd(rt), portCmd(rt), versionsCmd(rt), configCmd(rt))
+		getCmd(rt), setCmd(rt), pathCmd(rt), portCmd(rt), versionsCmd(rt), configCmd(rt))
 	return cmd
 }
 
@@ -111,9 +108,6 @@ func upCmd(rt *app.Runtime) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := host.CheckProtectPasswords(s, protectSettings(cfg)); err != nil {
-				return err
-			}
 			hash, pending, err := s.Pending()
 			if err != nil {
 				return err
@@ -124,9 +118,6 @@ func upCmd(rt *app.Runtime) *cobra.Command {
 				upArgs = append(upArgs, "--force-recreate")
 			}
 			if err := s.ComposeAttached(cmd.Context(), nil, upArgs...); err != nil {
-				return err
-			}
-			if err := host.ApplyProtect(s, protectSettings(cfg), protectSettings(cfg), func() error { return nil }, stepper(rt)); err != nil {
 				return err
 			}
 			if err := s.MarkApplied(hash); err != nil {
@@ -237,7 +228,7 @@ func listCmd(rt *app.Runtime) *cobra.Command {
 		Short:   "List hosts",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, s, err := env(rt)
+			_, s, err := env(rt)
 			if err != nil {
 				return err
 			}
@@ -250,13 +241,13 @@ func listCmd(rt *app.Runtime) *cobra.Command {
 				return nil
 			}
 			w := tabwriter.NewWriter(rt.UI.Out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "HOST\tURL\tDLE\tPHP\tPROTECT\tCREATED")
+			fmt.Fprintln(w, "HOST\tURL\tDLE\tPHP\tCREATED")
 			for _, r := range rows {
-				dle, php, url, gate := "-", "-", r.URL(s), "-"
+				dle, php, url := "-", "-", r.URL(s)
 				if r.Managed {
-					dle, php, gate = r.DLE, r.PHP, protectState(r.Host, cfg.Protect)
+					dle, php = r.DLE, r.PHP
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.Name, url, dle, php, gate, r.CreatedAt.Local().Format("2006-01-02 15:04"))
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Name, url, dle, php, r.CreatedAt.Local().Format("2006-01-02 15:04"))
 			}
 			return w.Flush()
 		},
@@ -264,13 +255,12 @@ func listCmd(rt *app.Runtime) *cobra.Command {
 }
 
 func addCmd(rt *app.Runtime) *cobra.Command {
-	var dle, distArchive, php, adminLogin, adminPassword, protect, siteOffline string
+	var dle, distArchive, php, adminLogin, adminPassword, siteOffline string
 	cmd := &cobra.Command{
 		Use:   "add NAME",
 		Short: "Create the host NAME.<base_domain> with DLE",
 		Example: "  dleplugin hosts add shop --dle 19.0\n" +
-			"  dleplugin hosts add demo --dist ~/dists/11.0.zip\n" +
-			"  dleplugin hosts add stage --protect on   # site only after the protect password",
+			"  dleplugin hosts add demo --dist ~/dists/11.0.zip",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			credentials := host.Credentials{
@@ -278,9 +268,6 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 				Password: credentialValue(cmd, "admin-password", adminPassword, "DLEPLUGIN_HOSTS_ADMIN_PASSWORD"),
 			}
 			if err := credentials.Validate(); err != nil {
-				return err
-			}
-			if _, err := host.ParseProtect(protect); err != nil {
 				return err
 			}
 			if cmd.Flags().Changed("site-offline") {
@@ -320,8 +307,6 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 				Admin:       credentials,
 				AdminPath:   cfg.AdminPath(),
 				SiteOffline: siteOffline,
-				Protect:     protect,
-				Settings:    protectSettings(cfg),
 			}, stepper(rt))
 			if err != nil {
 				return err
@@ -335,7 +320,6 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 			rt.UI.Info("URL:      " + res.URL)
 			rt.UI.Info("Admin:    " + res.URL + adminPath)
 			rt.UI.Info("Login:    " + credentials.Login)
-			rt.UI.Info("Protect:  " + protectState(res.Host, cfg.Protect))
 			rt.UI.Info("Offline:  " + siteOffline)
 			rt.UI.Info("Database: " + res.Host.Database)
 			rt.UI.Info("Files:    " + s.HostDir(res.Host.Name))
@@ -347,7 +331,6 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 	cmd.Flags().StringVar(&php, "php", "", "PHP version (default: chosen by DLE version; auto or an explicit version)")
 	cmd.Flags().StringVar(&adminLogin, "admin-login", "admin", "administrator login (DLEPLUGIN_HOSTS_ADMIN_LOGIN)")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "administrator password (DLEPLUGIN_HOSTS_ADMIN_PASSWORD)")
-	cmd.Flags().StringVar(&protect, "protect", host.ProtectDefault, "login form in front of the site: default (global setting), on, off")
 	cmd.Flags().StringVar(&siteOffline, "site-offline", "", "DLE maintenance mode: on (site closed) or off (site open); default: default_site_offline (on)")
 	return cmd
 }
@@ -434,137 +417,6 @@ func removeCmd(rt *app.Runtime) *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
 	return cmd
-}
-
-func protectCmd(rt *app.Runtime) *cobra.Command {
-	var inherit bool
-	cmd := &cobra.Command{
-		Use:   "protect [on|off|reset|password] | protect NAME <default|on|off|reset|password>",
-		Short: "Password login form in front of a whole site",
-		Long: `The form closes the whole site with a separate password, unrelated to DLE
-accounts. "protect password" sets the global password; "protect NAME password"
-sets the host password; "protect NAME password --default" returns the host to
-the global password. The password is read from the terminal without echo and
-confirmed, or as a single line from stdin. Changing a password ends the
-sessions of the affected hosts. Enabling without a password is refused.
-
-The global setting (off by default) applies to hosts in the default mode;
-the host modes on and off ignore it. The session lifetime is
-protect_session_ttl (never by default). Without arguments, shows the settings
-and which passwords are set.`,
-		Example: "  dleplugin hosts protect               # global setting and hosts\n" +
-			"  dleplugin hosts protect on            # enable for hosts in the default mode\n" +
-			"  dleplugin hosts protect shop off      # shop is open whatever the global setting\n" +
-			"  dleplugin hosts protect shop default  # shop follows the global setting again\n" +
-			"  dleplugin hosts protect shop reset    # end all form sessions of shop\n" +
-			"  dleplugin hosts config set protect_session_ttl 30d\n" +
-			"  logout: https://shop.example.com/__dleplugin/logout",
-		Args: cobra.MaximumNArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			step := stepper(rt)
-			passwordCommand := len(args) == 1 && args[0] == "password" || len(args) == 2 && args[1] == "password"
-			if inherit && (!passwordCommand || len(args) != 2) {
-				return fmt.Errorf("--default is only valid for protect NAME password")
-			}
-			if passwordCommand {
-				cfg, s, err := env(rt)
-				if err != nil {
-					return err
-				}
-				name := ""
-				if len(args) == 2 {
-					name = args[0]
-				}
-				var password []byte
-				if !inherit {
-					password, err = readProtectPassword(cmd.InOrStdin(), cmd.ErrOrStderr())
-					if err != nil {
-						return err
-					}
-					defer clear(password)
-				}
-				return host.SetPassword(s, name, password, inherit, protectSettings(cfg), step)
-			}
-			switch len(args) {
-			case 1:
-				if args[0] == protectReset {
-					_, s, err := env(rt)
-					if err != nil {
-						return err
-					}
-					return host.ResetSessions(s, "", step)
-				}
-				if args[0] != host.ProtectOn && args[0] != host.ProtectOff {
-					return fmt.Errorf("globally: dleplugin hosts protect on|off|reset|password; for a host: dleplugin hosts protect %s <default|on|off|reset|password>", args[0])
-				}
-				return updateConfig(rt, "protect", args[0])
-			case 2:
-				if _, err := host.ParseProtect(args[1]); err != nil && args[1] != protectReset {
-					return err
-				}
-				cfg, s, err := env(rt)
-				if err != nil {
-					return err
-				}
-				if args[1] == protectReset {
-					return host.ResetSessions(s, args[0], step)
-				}
-				h, err := host.SetProtect(s, args[0], args[1], protectSettings(cfg), step)
-				if err != nil {
-					return err
-				}
-				rt.UI.Infof("%s: %s", h.Name, protectState(h, cfg.Protect))
-				return nil
-			}
-			cfg, s, err := env(rt)
-			if err != nil {
-				return err
-			}
-			rows, err := host.List(s)
-			if err != nil {
-				return err
-			}
-			globalPassword, ownPasswords, err := host.PasswordStatus(s)
-			if err != nil {
-				return err
-			}
-			rt.UI.Info("Global password: " + passwordPresence(globalPassword))
-			rt.UI.Info("Global: " + config.Keys["protect"].Get(cfg))
-			rt.UI.Info("Session lifetime: " + config.Keys["protect_session_ttl"].Get(cfg))
-			w := tabwriter.NewWriter(rt.UI.Out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "HOST\tMODE\tPROTECT\tOWN PASSWORD")
-			for _, r := range rows {
-				if r.Managed {
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Name, r.ProtectMode(), onOff(r.Protected(cfg.Protect)), passwordPresence(ownPasswords[r.Name]))
-				}
-			}
-			return w.Flush()
-		},
-	}
-	cmd.Flags().BoolVar(&inherit, "default", false, "reset the host password to the global one")
-	return cmd
-}
-
-const protectReset = "reset"
-
-func protectSettings(cfg *config.Config) host.ProtectSettings {
-	return host.ProtectSettings{Global: cfg.Protect, SessionTTL: cfg.SessionTTL()}
-}
-
-// protectState is the effective login form state, marked for the default mode.
-func protectState(h host.Host, global bool) string {
-	state := onOff(h.Protected(global))
-	if h.ProtectMode() == host.ProtectDefault {
-		return state + " (default)"
-	}
-	return state
-}
-
-func onOff(v bool) string {
-	if v {
-		return "on"
-	}
-	return "off"
 }
 
 func pathCmd(rt *app.Runtime) *cobra.Command {
@@ -754,29 +606,10 @@ func updateConfig(rt *app.Runtime, name, value string) error {
 	if err != nil {
 		return err
 	}
-	prev := protectSettings(cfg)
 	if err := key.Set(cfg, value); err != nil {
 		return err
 	}
-	if name == "protect" || name == "protect_session_ttl" {
-		// Host vhosts first, then the config; rolled back on error.
-		s, err := openStack(rt, cfg)
-		if err != nil {
-			return err
-		}
-		if name == "protect" && cfg.Protect {
-			set, _, err := host.PasswordStatus(s)
-			if err != nil {
-				return err
-			}
-			if !set {
-				return fmt.Errorf("no global password: run dleplugin hosts protect password")
-			}
-		}
-		if err := host.ApplyProtect(s, protectSettings(cfg), prev, func() error { return config.Save(cfg) }, stepper(rt)); err != nil {
-			return err
-		}
-	} else if err := config.Save(cfg); err != nil {
+	if err := config.Save(cfg); err != nil {
 		return err
 	}
 	rt.UI.Infof("%s: %s", name, key.Get(cfg))
@@ -792,50 +625,4 @@ func credentialValue(cmd *cobra.Command, flag, value, variable string) string {
 		return v
 	}
 	return value
-}
-
-func passwordPresence(set bool) string {
-	if set {
-		return "set"
-	}
-	return "not set"
-}
-
-// readProtectPassword reads the password from the terminal or stdin; it is
-// never accepted as an argument or flag.
-func readProtectPassword(in io.Reader, out io.Writer) ([]byte, error) {
-	var password []byte
-	if f, ok := in.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
-		fmt.Fprint(out, "Protect password: ")
-		var err error
-		password, err = term.ReadPassword(int(f.Fd()))
-		fmt.Fprintln(out)
-		if err != nil {
-			return nil, err
-		}
-		fmt.Fprint(out, "Repeat password: ")
-		confirm, err := term.ReadPassword(int(f.Fd()))
-		fmt.Fprintln(out)
-		defer clear(confirm)
-		if err != nil {
-			clear(password)
-			return nil, err
-		}
-		if !bytes.Equal(password, confirm) {
-			clear(password)
-			return nil, fmt.Errorf("passwords do not match")
-		}
-	} else {
-		// The read limit prevents unbounded allocation; spaces are kept.
-		data, err := io.ReadAll(io.LimitReader(in, 75))
-		if err != nil {
-			return nil, err
-		}
-		password = bytes.TrimSuffix(bytes.TrimSuffix(data, []byte("\n")), []byte("\r"))
-	}
-	if len(password) == 0 || len(password) > 72 || bytes.ContainsAny(password, "\r\n\x00") {
-		clear(password)
-		return nil, fmt.Errorf("the password must be a single line of 1 to 72 bytes without NUL")
-	}
-	return password, nil
 }

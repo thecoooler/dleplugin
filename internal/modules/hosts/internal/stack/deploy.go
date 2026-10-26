@@ -87,7 +87,7 @@ func ensure(dir string) (bool, error) {
 	}
 	hash := hex.EncodeToString(sum.Sum(nil))
 
-	for _, d := range []string{"www", "data", "data/gate", "data/protect", "logs/apache"} {
+	for _, d := range []string{"www", "data", "logs/apache"} {
 		if err := os.MkdirAll(filepath.Join(dir, filepath.FromSlash(d)), 0o755); err != nil {
 			return false, err
 		}
