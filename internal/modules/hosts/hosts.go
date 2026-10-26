@@ -318,6 +318,7 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 				PHPVersions: cfg.PHPVersions,
 				DistsDir:    cfg.DistsDir,
 				Admin:       credentials,
+				AdminPath:   cfg.AdminPath(),
 				SiteOffline: siteOffline,
 				Protect:     protect,
 				Settings:    protectSettings(cfg),

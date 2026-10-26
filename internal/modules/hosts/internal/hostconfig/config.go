@@ -25,6 +25,7 @@ type Config struct {
 	ProjectDir         string   `yaml:"project_dir"`
 	DistsDir           string   `yaml:"dists_dir"`
 	DefaultDLE         string   `yaml:"default_dle"`
+	DefaultAdminPath   string   `yaml:"default_admin_path"`
 	DefaultSiteOffline bool     `yaml:"default_site_offline"`
 	DefaultPHP         string   `yaml:"default_php"`
 	PHPVersions        []string `yaml:"php_versions"`
@@ -96,6 +97,20 @@ var Keys = map[string]Key{
 				return fmt.Errorf("PHP version %s is not in php_versions (%s)", v, strings.Join(c.PHPVersions, ", "))
 			}
 			c.DefaultPHP = v
+			return nil
+		},
+	},
+	"default_admin_path": {
+		Help: "administrator PHP filename for new hosts (default: admin.php)",
+		Get:  func(c *Config) string { return c.AdminPath() },
+		Set: func(c *Config, v string) error {
+			if v == "" {
+				v = "admin.php"
+			}
+			if err := ValidateAdminPath(v); err != nil {
+				return fmt.Errorf("default_admin_path: %w", err)
+			}
+			c.DefaultAdminPath = v
 			return nil
 		},
 	},
@@ -197,6 +212,7 @@ func Lookup(name string) (Key, error) {
 func defaultConfig() *Config {
 	return &Config{
 		DefaultSiteOffline: true,
+		DefaultAdminPath:   "admin.php",
 		DefaultPHP:         "auto",
 		PHPVersions:        []string{"8.5", "7.4"},
 	}
@@ -265,6 +281,25 @@ func absPath(p string) (string, error) {
 		p = filepath.Join(home, p[2:])
 	}
 	return filepath.Abs(p)
+}
+
+// AdminPath returns the administrator filename for new hosts, including the
+// default for configs written before default_admin_path was introduced.
+func (c *Config) AdminPath() string {
+	if c.DefaultAdminPath == "" {
+		return "admin.php"
+	}
+	return c.DefaultAdminPath
+}
+
+var adminPathRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*\.php$`)
+
+// ValidateAdminPath checks the filename shared by host settings and defaults.
+func ValidateAdminPath(value string) error {
+	if len(value) > 255 || !adminPathRE.MatchString(value) {
+		return fmt.Errorf("admin_path: expected a PHP filename, e.g. panel.php (ASCII letters, digits, _ and -; no directories; at most 255 bytes)")
+	}
+	return nil
 }
 
 var domainLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
@@ -346,6 +381,9 @@ func (c *Config) SessionTTL() time.Duration {
 
 // Validate checks the values, including after manual YAML edits.
 func (c *Config) Validate() error {
+	if err := ValidateAdminPath(c.AdminPath()); err != nil {
+		return fmt.Errorf("default_admin_path: %w", err)
+	}
 	if err := validateDomain(c.BaseDomain); err != nil {
 		return err
 	}

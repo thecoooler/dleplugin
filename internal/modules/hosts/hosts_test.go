@@ -251,3 +251,26 @@ func TestComposePassthrough(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultAdminPathCLI(t *testing.T) {
+	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	t.Setenv("DLEHOST_DIR", filepath.Join(t.TempDir(), "unused-stack"))
+	for _, args := range [][]string{
+		{"config", "get", "default_admin_path"},
+		{"config", "set", "default_admin_path", "control.php"},
+		{"config", "get", "default_admin_path"},
+		{"config", "unset", "default_admin_path"},
+		{"config", "get", "default_admin_path"},
+	} {
+		e := moduletest.NewEnv(t, "", Module())
+		if code := e.Run(append([]string{"hosts"}, args...)...); code != 0 {
+			t.Fatalf("%v: %s", args, e.ErrB.String())
+		}
+		if args[1] == "get" {
+			cfg, err := config.Load()
+			if err != nil || strings.TrimSpace(e.Out.String()) != cfg.AdminPath() {
+				t.Fatalf("get default: %s %v", e.Out.String(), err)
+			}
+		}
+	}
+}

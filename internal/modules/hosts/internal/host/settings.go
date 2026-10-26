@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/hostconfig"
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/stack"
 )
 
@@ -16,7 +17,7 @@ func ValidateSetting(key, value string) error {
 		return err
 	}
 	if key == "admin_path" {
-		return validateAdminPath(value)
+		return hostconfig.ValidateAdminPath(value)
 	}
 	if value != "on" && value != "off" {
 		return fmt.Errorf("%s: use on or off", key)

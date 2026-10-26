@@ -178,3 +178,56 @@ func TestAdminPathFilesystemFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestAddAdminPath(t *testing.T) {
+	for _, value := range []string{"", "admin.php", "control.php", "index.php", "../bad.php"} {
+		t.Run("address="+value, func(t *testing.T) {
+			s := isolatedStack(t)
+			calls, _ := fakeDocker(t)
+			dists := t.TempDir()
+			writeTestDist(t, dists, "21.0")
+			_, err := Add(s, AddOptions{Name: "shop", DLE: "21.0", PHPVersions: []string{"8.5"}, DistsDir: dists, Admin: Credentials{"admin", "test-password"}, AdminPath: value}, func(string) {})
+			if value == "index.php" || value == "../bad.php" {
+				if err == nil {
+					t.Fatal("accepted invalid/colliding admin filename")
+				}
+				if _, err := os.Stat(s.HostDir("shop")); !os.IsNotExist(err) {
+					t.Fatal("published failed host")
+				}
+				entries, _ := os.ReadDir(s.StagingDir())
+				if len(entries) != 0 {
+					t.Fatal("staged site left after failure")
+				}
+				if value == "index.php" && !strings.Contains(readTestFile(t, calls), "DROP DATABASE") {
+					t.Fatal("database not rolled back")
+				}
+				hosts, err := loadRegistry(s)
+				if err != nil || len(hosts) != 0 {
+					t.Fatalf("registered failed host: %+v %v", hosts, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := value
+			if want == "" {
+				want = "admin.php"
+			}
+			if got, err := GetSetting(s, "shop", "admin_path"); err != nil || got != want {
+				t.Fatalf("admin_path: %q %v", got, err)
+			}
+			if readTestFile(t, filepath.Join(s.HostDir("shop"), want)) != "<?php echo 'admin:ok';" {
+				t.Fatal("admin contents changed")
+			}
+			if want != "admin.php" {
+				if _, err := os.Stat(filepath.Join(s.HostDir("shop"), "admin.php")); !os.IsNotExist(err) {
+					t.Fatal("default entry point left")
+				}
+			}
+			if got, err := GetSetting(s, "shop", "site_offline"); err != nil || got != "on" {
+				t.Fatalf("maintenance changed: %s %v", got, err)
+			}
+		})
+	}
+}

@@ -61,7 +61,7 @@ work from any directory.
 ## Where things are stored
 
 - Hosts config: `~/.config/dlehost/config.yml` (overridden by `DLEHOST_CONFIG`).
-  Keys: `dists_dir`, `default_dle`, `default_php`, `default_site_offline`, `php_versions`,
+  Keys: `dists_dir`, `default_dle`, `default_php`, `default_site_offline`, `default_admin_path`, `php_versions`,
   `project_dir`, `base_domain`, `external_origin`, `protect`,
   `protect_session_ttl` (see `dleplugin hosts config --help`).
 - Stack: `~/.local/share/dlehost` (`$XDG_DATA_HOME/dlehost`, or `project_dir`,
@@ -204,6 +204,20 @@ dleplugin hosts get shop admin_path                # e.g. admin.php
 dleplugin hosts set shop admin_path control.php    # rename the current entry point
 dleplugin hosts set shop admin_path admin.php      # restore the default
 ```
+
+Set the administrator address for future `hosts add` commands globally:
+
+```bash
+dleplugin hosts config set default_admin_path control.php
+dleplugin hosts config get default_admin_path       # control.php
+dleplugin hosts config unset default_admin_path     # restore admin.php for new hosts
+```
+
+`default_admin_path` defaults to `admin.php`, including in older configs, and
+uses the same filename validation as `admin_path`. It only affects new hosts;
+existing hosts retain their address. Creation renames the entry point before
+publishing the site. A collision or config error rolls back creation, including
+the new files and database. `hosts add` prints the resulting administrator URL.
 
 `admin_path` matches the DLE configuration key used by DLE 11.0–21.0. The
 command reads the current filename from `engine/data/config.php`, including

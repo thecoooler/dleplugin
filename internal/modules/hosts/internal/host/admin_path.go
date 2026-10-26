@@ -8,16 +8,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/hostconfig"
 )
-
-var adminPathRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*\.php$`)
-
-func validateAdminPath(value string) error {
-	if len(value) > 255 || !adminPathRE.MatchString(value) {
-		return fmt.Errorf("admin_path: expected a PHP filename, e.g. panel.php (ASCII letters, digits, _ and -; no directories; at most 255 bytes)")
-	}
-	return nil
-}
 
 // Tokenize generated PHP configuration without matching keys inside comments or
 // other string values. Never execute site PHP to read a setting.
@@ -65,7 +58,7 @@ func readAdminPath(dir string) ([]byte, []int, string, error) {
 		return nil, nil, "", fmt.Errorf("%s: expected exactly one literal admin_path setting", path)
 	}
 	value := string(data[match[0]:match[1]])
-	if err := validateAdminPath(value); err != nil {
+	if err := hostconfig.ValidateAdminPath(value); err != nil {
 		return nil, nil, "", fmt.Errorf("%s: %w", path, err)
 	}
 	return data, match, value, nil
