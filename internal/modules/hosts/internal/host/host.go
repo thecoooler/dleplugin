@@ -4,8 +4,6 @@ package host
 import (
 	"archive/zip"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -303,7 +301,7 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 	if s.ExternalOrigin != "" {
 		h.ExternalOrigin = strings.TrimSuffix(s.HostURL(h.Domain()), "/")
 	}
-	password, err := randomHex(16)
+	password, err := stack.NewPassword()
 	if err != nil {
 		return nil, err
 	}
@@ -478,14 +476,6 @@ func replaceInFile(path string, fn func(string) string) error {
 	return os.WriteFile(path, []byte(fn(string(data))), 0o644)
 }
 
-func randomHex(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
 // SetHTTPPort switches the Apache port of the whole stack and updates
 // http_home_url of the hosts without an external origin.
 func SetHTTPPort(s *stack.Stack, port int, log func(string)) error {
@@ -502,10 +492,12 @@ func SetHTTPPort(s *stack.Stack, port int, log func(string)) error {
 	if err := s.SetDotEnv("HTTP_PORT", strconv.Itoa(port)); err != nil {
 		return err
 	}
-	log("recreating apache")
-	if err := s.Compose(nil, "up", "-d", "apache"); err != nil {
-		s.SetDotEnv("HTTP_PORT", prev)
-		if rerr := s.Compose(nil, "up", "-d", "apache"); rerr != nil {
+	log("applying stack configuration")
+	if err := s.Compose(nil, "up", "-d"); err != nil {
+		if rerr := s.SetDotEnv("HTTP_PORT", prev); rerr != nil {
+			return fmt.Errorf("%w; restoring port %s in .env failed: %v", err, prev, rerr)
+		}
+		if rerr := s.Compose(nil, "up", "-d"); rerr != nil {
 			return fmt.Errorf("%w; restoring port %s failed too: %v", err, prev, rerr)
 		}
 		return fmt.Errorf("%w (port restored to %s)", err, prev)

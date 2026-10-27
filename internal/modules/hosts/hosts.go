@@ -263,11 +263,8 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 			"  dleplugin hosts add demo --dist ~/dists/11.0.zip",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			credentials := host.Credentials{
-				Login:    credentialValue(cmd, "admin-login", adminLogin, "DLEPLUGIN_HOSTS_ADMIN_LOGIN"),
-				Password: credentialValue(cmd, "admin-password", adminPassword, "DLEPLUGIN_HOSTS_ADMIN_PASSWORD"),
-			}
-			if err := credentials.Validate(); err != nil {
+			credentials, generatedPassword, err := adminCredentials(cmd, adminLogin, adminPassword)
+			if err != nil {
 				return err
 			}
 			if cmd.Flags().Changed("site-offline") {
@@ -295,6 +292,18 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 			if !cmd.Flags().Changed("site-offline") {
 				siteOffline = config.Keys["default_site_offline"].Get(cfg)
 			}
+			var credentialFile string
+			if generatedPassword {
+				credentialFile, err = saveGeneratedCredentials(s, credentials)
+				if err != nil {
+					return err
+				}
+				defer func() {
+					if credentialFile != "" {
+						os.Remove(credentialFile)
+					}
+				}()
+			}
 			res, err := host.Add(s, host.AddOptions{
 				Context:     cmd.Context(),
 				Name:        args[0],
@@ -311,6 +320,10 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 			}, stepper(rt))
 			if err != nil {
 				return err
+			}
+			if generatedPassword {
+				rt.UI.Info("Administrator credentials: " + credentialFile)
+				credentialFile = "" // retained after the host has been created
 			}
 			adminPath, err := host.GetSetting(s, res.Host.Name, "admin_path")
 			if err != nil {
@@ -331,9 +344,49 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 	cmd.Flags().StringVar(&distArchive, "dist", "", "path to a DLE distribution ZIP (instead of <version>.zip in dists_dir)")
 	cmd.Flags().StringVar(&php, "php", "", "PHP version (default: chosen by DLE version; auto or an explicit version)")
 	cmd.Flags().StringVar(&adminLogin, "admin-login", "admin", "administrator login (DLEPLUGIN_HOSTS_ADMIN_LOGIN)")
-	cmd.Flags().StringVar(&adminPassword, "admin-password", "admin", "administrator password (DLEPLUGIN_HOSTS_ADMIN_PASSWORD)")
+	cmd.Flags().StringVar(&adminPassword, "admin-password", "", "administrator password (DLEPLUGIN_HOSTS_ADMIN_PASSWORD; generated if omitted)")
 	cmd.Flags().StringVar(&siteOffline, "site-offline", "", "DLE maintenance mode: on (site closed) or off (site open); default: default_site_offline (on)")
 	return cmd
+}
+
+func adminCredentials(cmd *cobra.Command, login, password string) (host.Credentials, bool, error) {
+	_, passwordFromEnv := os.LookupEnv("DLEPLUGIN_HOSTS_ADMIN_PASSWORD")
+	generated := !cmd.Flags().Changed("admin-password") && !passwordFromEnv
+	c := host.Credentials{
+		Login:    credentialValue(cmd, "admin-login", login, "DLEPLUGIN_HOSTS_ADMIN_LOGIN"),
+		Password: credentialValue(cmd, "admin-password", password, "DLEPLUGIN_HOSTS_ADMIN_PASSWORD"),
+	}
+	if generated {
+		var err error
+		c.Password, err = stack.NewPassword()
+		if err != nil {
+			return c, false, fmt.Errorf("generate administrator password: %w", err)
+		}
+	}
+	return c, generated, c.Validate()
+}
+
+// Generated credentials are outside www and never printed to the terminal.
+func saveGeneratedCredentials(s *stack.Stack, credentials host.Credentials) (string, error) {
+	dir := filepath.Join(s.Dir, "data", "credentials")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create credentials directory: %w", err)
+	}
+	f, err := os.CreateTemp(dir, "admin-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("create credentials file: %w", err)
+	}
+	path := f.Name()
+	if _, err = fmt.Fprintf(f, "Login: %s\nPassword: %s\n", credentials.Login, credentials.Password); err != nil {
+		f.Close()
+		os.Remove(path)
+		return "", fmt.Errorf("write credentials file: %w", err)
+	}
+	if err = f.Close(); err != nil {
+		os.Remove(path)
+		return "", fmt.Errorf("close credentials file: %w", err)
+	}
+	return path, nil
 }
 
 func getCmd(rt *app.Runtime) *cobra.Command {

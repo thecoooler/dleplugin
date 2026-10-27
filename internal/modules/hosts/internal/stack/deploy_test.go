@@ -1,11 +1,130 @@
 package stack
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestGeneratedDatabaseCredentials(t *testing.T) {
+	first, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, s := range []*Stack{first, second} {
+		if s.Env["BIND_ADDRESS"] != "127.0.0.1" {
+			t.Fatal("HTTP does not default to loopback")
+		}
+		if s.Env["DB_BIND_ADDRESS"] != "127.0.0.1" {
+			t.Fatal("database does not default to loopback")
+		}
+		for _, key := range []string{"DB_ROOT_PASSWORD", "DB_PASSWORD"} {
+			password := s.Env[key]
+			decoded, err := hex.DecodeString(password)
+			if err != nil || len(decoded) != 24 || seen[password] {
+				t.Fatalf("%s must be independently generated from 24 random bytes", key)
+			}
+			seen[password] = true
+		}
+	}
+	reopened, err := Open(first.Dir)
+	if err != nil || reopened.Env["DB_ROOT_PASSWORD"] != first.Env["DB_ROOT_PASSWORD"] || reopened.Env["DB_PASSWORD"] != first.Env["DB_PASSWORD"] {
+		t.Fatal("reopening changed database credentials", err)
+	}
+}
+
+func TestExistingDataRequiresOriginalEnv(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "data", "mariadb")
+	if err := os.MkdirAll(db, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(db, "existing"), []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(dir); err == nil || !strings.Contains(err.Error(), "restore the original .env") {
+		t.Fatal("missing .env with existing database must fail", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".env")); !os.IsNotExist(err) {
+		t.Fatal("created .env for existing database")
+	}
+	old := "BIND_ADDRESS=0.0.0.0\nDB_ROOT_PASSWORD=old\nDB_PASSWORD=old-user\n"
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, ".env"))
+	if err != nil || string(got) != old {
+		t.Fatal("existing .env changed", err)
+	}
+}
+
+func TestExplicitDatabaseDefaults(t *testing.T) {
+	t.Setenv("DLEPLUGIN_HOSTS_DB_ROOT_PASSWORD", "custom-root")
+	t.Setenv("DLEPLUGIN_HOSTS_DB_PASSWORD", "custom-user")
+	t.Setenv("DLEPLUGIN_HOSTS_DB_BIND_ADDRESS", "192.0.2.10")
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Env["DB_ROOT_PASSWORD"] != "custom-root" || s.Env["DB_PASSWORD"] != "custom-user" || s.Env["DB_BIND_ADDRESS"] != "192.0.2.10" {
+		t.Fatal("explicit settings were not preserved")
+	}
+}
+
+func TestComposeDatabaseBinding(t *testing.T) {
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("docker compose not installed")
+	}
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, env, want string
+	}{
+		{"legacy env", "BIND_ADDRESS=0.0.0.0\n", "127.0.0.1"},
+		{"independent address", "BIND_ADDRESS=127.0.0.1\nDB_BIND_ADDRESS=192.0.2.10\n", "192.0.2.10"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(filepath.Join(s.Dir, ".env"), []byte("COMPOSE_PROJECT_NAME=test\n"+tc.env), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("docker", "compose", "--project-directory", s.Dir, "-f", filepath.Join(s.Dir, "docker-compose.yml"), "config", "--format", "json")
+			cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+			output, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("compose config: %v", err)
+			}
+			var config struct {
+				Services map[string]struct {
+					Ports []struct {
+						HostIP    string `json:"host_ip"`
+						Published string `json:"published"`
+					} `json:"ports"`
+				} `json:"services"`
+			}
+			if err := json.Unmarshal(output, &config); err != nil {
+				t.Fatal(err)
+			}
+			ports := config.Services["db"].Ports
+			if len(ports) != 1 || ports[0].HostIP != tc.want || ports[0].Published != "3307" {
+				t.Fatalf("unexpected database port binding: %+v", ports)
+			}
+		})
+	}
+}
 
 func TestEnsure(t *testing.T) {
 	dir := t.TempDir()
@@ -118,7 +237,7 @@ func TestDotEnvDefaultsFromEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	if s.HTTPPort() != "8081" || s.Env["COMPOSE_PROJECT_NAME"] != "dle-test" || s.Env["DB_PORT"] != "3307" {
-		t.Fatalf(".env: %v", s.Env)
+		t.Fatal(".env did not retain explicit or default non-secret settings")
 	}
 }
 

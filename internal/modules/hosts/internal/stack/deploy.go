@@ -1,6 +1,7 @@
 package stack
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
@@ -178,15 +179,17 @@ var defaultDotEnv = []struct{ key, value string }{
 	{"COMPOSE_PROJECT_NAME", "dleplugin-hosts"},
 	{"MARIADB_VERSION", "11.4"},
 	{"", ""},
-	{"#", "Address of the apache and MariaDB ports; 127.0.0.1 allows this machine only"},
-	{"BIND_ADDRESS", "0.0.0.0"},
+	{"#", "Apache bind address"},
+	{"BIND_ADDRESS", "127.0.0.1"},
 	{"HTTP_PORT", "80"},
+	{"#", "MariaDB bind address, independent of Apache"},
+	{"DB_BIND_ADDRESS", "127.0.0.1"},
 	{"DB_PORT", "3307"},
 	{"", ""},
-	{"DB_ROOT_PASSWORD", "root"},
+	{"DB_ROOT_PASSWORD", ""},
 	{"DB_NAME", "dle"},
 	{"DB_USER", "dle"},
-	{"DB_PASSWORD", "dle"},
+	{"DB_PASSWORD", ""},
 	{"", ""},
 	{"#", "Owner of the www/ files inside the containers"},
 	{"UID", ""},
@@ -199,13 +202,21 @@ func writeDefaultDotEnv(p string) error {
 	if _, err := os.Stat(p); err == nil || !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	// MariaDB initialization variables do not change an existing data directory.
+	// Generating a replacement .env would silently create unusable credentials.
+	entries, err := os.ReadDir(filepath.Join(filepath.Dir(p), "data", "mariadb"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if len(entries) != 0 {
+		return errors.New(".env is missing but MariaDB data exists; restore the original .env before starting the stack")
+	}
 	uid, gid := os.Getuid(), os.Getgid()
 	// Windows (-1) or root: php-fpm does not run a pool as UID/GID 0
 	if uid <= 0 || gid <= 0 {
 		uid, gid = 1000, 1000
 	}
 	var b strings.Builder
-	var err error
 	for _, kv := range defaultDotEnv {
 		switch kv.key {
 		case "":
@@ -226,11 +237,39 @@ func writeDefaultDotEnv(p string) error {
 			if value, err = dotEnvValue(v); err != nil {
 				return fmt.Errorf("DLEPLUGIN_HOSTS_%s: %w", kv.key, err)
 			}
+		} else if kv.key == "DB_ROOT_PASSWORD" || kv.key == "DB_PASSWORD" {
+			if value, err = NewPassword(); err != nil {
+				return fmt.Errorf("generate %s: %w", kv.key, err)
+			}
 		}
 		b.WriteString(kv.key + "=" + value + "\n")
 	}
 	// .env holds database passwords
-	return os.WriteFile(p, []byte(b.String()), 0o600)
+	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if _, err = f.WriteString(b.String()); err != nil {
+		f.Close()
+		os.Remove(p)
+		return err
+	}
+	if err = f.Close(); err != nil {
+		os.Remove(p)
+	}
+	return err
+}
+
+// NewPassword returns 192 bits of cryptographically random data as hex.
+func NewPassword() (string, error) {
+	var b [24]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
 }
 
 var plainDotEnvValue = regexp.MustCompile(`^[A-Za-z0-9_./:@+,-]*$`)
