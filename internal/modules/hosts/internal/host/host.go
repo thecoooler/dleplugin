@@ -201,12 +201,13 @@ type AddOptions struct {
 	DLE         string
 	DistArchive string // direct path to a DLE distribution ZIP
 	PHP         string
-	DefaultPHP  string   // config preference; used only when compatible with DLE
+	DefaultPHP  string   // configured default or auto
 	PHPVersions []string // allowed PHP versions
 	DistsDir    string
 	Admin       Credentials
-	AdminPath   string // desired administrator filename; empty keeps the distribution default
-	SiteOffline string // on (default, closed) or off (open)
+	AdminPath   string       // desired administrator filename; empty keeps the distribution default
+	SiteOffline string       // on (default, closed) or off (open)
+	Warn        func(string) // optional warnings before installation
 }
 
 // AddResult is the created host and its address.
@@ -278,13 +279,19 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 	dleVersion = distInfo.Version
 
 	phpVersion = selectPHP(dleVersion, phpVersion, opts.DefaultPHP)
+	warn := opts.Warn
+	if warn == nil {
+		warn = func(string) {}
+	}
+	if !compatiblePHP(dleVersion, phpVersion) {
+		warn(fmt.Sprintf("PHP %s may not be compatible with DLE %s", phpVersion, dleVersion))
+	}
+	if phpVersion == "7.4" {
+		warn("PHP 7.4 is end-of-life and vulnerable to CVE-2026-109618 and CVE-2026-109619; do not expose this stack to untrusted networks")
+	}
 	if !slices.Contains(opts.PHPVersions, phpVersion) {
 		return nil, fmt.Errorf("PHP version %s is not available, allowed: %s", phpVersion, strings.Join(opts.PHPVersions, ", "))
 	}
-	if dist.VersionLess(phpVersion, minimumInstallerPHP(dleVersion)) {
-		return nil, fmt.Errorf("a clean install of DLE %s requires PHP >= %s", dleVersion, minimumInstallerPHP(dleVersion))
-	}
-
 	h := Host{
 		Name:       name,
 		DomainName: s.Domain(name),

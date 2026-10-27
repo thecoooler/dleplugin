@@ -85,7 +85,7 @@ var Keys = map[string]Key{
 		Set:  func(c *Config, v string) error { c.DefaultDLE = v; return nil },
 	},
 	"default_php": {
-		Help: "PHP for add: auto (by DLE version) or a preference used when compatible with DLE",
+		Help: "PHP for add: auto (by DLE version) or an explicit default version",
 		Get:  func(c *Config) string { return c.DefaultPHP },
 		Set: func(c *Config, v string) error {
 			if v != "" && v != "auto" && !slices.Contains(c.PHPVersions, v) {

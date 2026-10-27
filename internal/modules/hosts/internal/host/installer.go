@@ -12,9 +12,7 @@ import (
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/stack"
 )
 
-// Explicit --php overrides automatic selection. A configured preference is used
-// only within the compatible runtime family, so existing default_php: 8.5 does
-// not force old releases onto PHP 8, nor default_php: 7.4 onto DLE 16.1+.
+// Explicit --php overrides the configured default. Only auto chooses by DLE version.
 func selectPHP(version, requested, preferred string) string {
 	if requested != "" && requested != "auto" {
 		return requested
@@ -23,8 +21,7 @@ func selectPHP(version, requested, preferred string) string {
 		preferred = ""
 	}
 	modern := !dist.VersionLess(version, "16.1")
-	if phpVersionRE.MatchString(preferred) && !dist.VersionLess(preferred, minimumInstallerPHP(version)) &&
-		(modern && !dist.VersionLess(preferred, "8.0") || !modern && dist.VersionLess(preferred, "8.0")) {
+	if phpVersionRE.MatchString(preferred) {
 		return preferred
 	}
 	if modern {
@@ -34,6 +31,14 @@ func selectPHP(version, requested, preferred string) string {
 }
 
 var phpVersionRE = regexp.MustCompile(`^[0-9]+\.[0-9]+$`)
+
+// compatiblePHP reflects the runtime families used for automatic selection,
+// not a guarantee that every DLE release or plugin supports every PHP version.
+func compatiblePHP(version, php string) bool {
+	modern := !dist.VersionLess(version, "16.1")
+	return !dist.VersionLess(php, minimumInstallerPHP(version)) &&
+		(modern && !dist.VersionLess(php, "8.0") || !modern && dist.VersionLess(php, "8.0"))
+}
 
 func minimumInstallerPHP(version string) string {
 	switch {

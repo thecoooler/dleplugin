@@ -83,6 +83,62 @@ func TestAddRejectsNonCleanArchive(t *testing.T) {
 	}
 }
 
+func TestAddPHPWarnings(t *testing.T) {
+	for _, tc := range []struct {
+		name, dle, requested, preferred string
+		want, absent                    []string
+	}{
+		{"automatic legacy", "11.0", "", "auto", []string{"PHP 7.4 is end-of-life"}, []string{"may not be compatible"}},
+		{"configured legacy", "11.0", "", "7.4", []string{"PHP 7.4 is end-of-life"}, nil},
+		{"manual legacy", "11.0", "7.4", "auto", []string{"PHP 7.4 is end-of-life"}, nil},
+		{"incompatible default", "11.0", "", "8.5", []string{"PHP 8.5 may not be compatible"}, []string{"PHP 7.4 is end-of-life"}},
+		{"incompatible manual", "11.0", "8.5", "auto", []string{"PHP 8.5 may not be compatible"}, []string{"PHP 7.4 is end-of-life"}},
+		{"below minimum", "21.0", "7.4", "auto", []string{"PHP 7.4 may not be compatible", "PHP 7.4 is end-of-life"}, nil},
+		{"explicit auto ignores preference", "11.0", "auto", "8.5", []string{"PHP 7.4 is end-of-life"}, []string{"may not be compatible"}},
+		{"modern", "21.0", "", "auto", nil, []string{"may not be compatible", "end-of-life"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := isolatedStack(t)
+			dirs := t.TempDir()
+			writeTestDist(t, dirs, tc.dle)
+			var warnings []string
+			_, err := Add(s, AddOptions{Name: "shop", DLE: tc.dle, DistsDir: dirs, PHP: tc.requested,
+				DefaultPHP: tc.preferred, Admin: Credentials{"admin", "password"}, Warn: func(msg string) { warnings = append(warnings, msg) }}, func(string) {})
+			// An empty PHPVersions stops before installation, after warning selection.
+			if err == nil || !strings.Contains(err.Error(), "not available") {
+				t.Fatalf("expected unavailable PHP error, got %v", err)
+			}
+			got := strings.Join(warnings, "\n")
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("warnings %q missing %q", got, want)
+				}
+			}
+			for _, absent := range tc.absent {
+				if strings.Contains(got, absent) {
+					t.Errorf("warnings %q unexpectedly contain %q", got, absent)
+				}
+			}
+		})
+	}
+}
+
+func TestAddKeepsConfiguredPHPBelowInstallerMinimum(t *testing.T) {
+	s := isolatedStack(t)
+	dirs := t.TempDir()
+	writeTestDist(t, dirs, "21.0")
+	var warnings []string
+	result, err := Add(s, AddOptions{Name: "shop", DLE: "21.0", DistsDir: dirs,
+		DefaultPHP: "7.4", PHPVersions: []string{"7.4", "8.5"}, Admin: Credentials{"admin", "password"},
+		Warn: func(msg string) { warnings = append(warnings, msg) }}, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Host.PHP != "7.4" || !strings.Contains(strings.Join(warnings, "\n"), "may not be compatible") {
+		t.Fatalf("PHP=%s warnings=%v", result.Host.PHP, warnings)
+	}
+}
+
 func TestAddListPortRouting(t *testing.T) {
 	for _, external := range []bool{false, true} {
 		t.Run(map[bool]string{false: "local", true: "external"}[external], func(t *testing.T) {
