@@ -116,7 +116,7 @@ func run(t *testing.T, stdin string, args ...string) (int, string) {
 }
 
 func TestHelp(t *testing.T) {
-	for _, sub := range []string{"", "up", "down", "compose", "list", "add", "remove", "get", "set", "path", "port", "versions", "config", "config set"} {
+	for _, sub := range []string{"", "up", "down", "compose", "list", "add", "remove", "get", "set", "path", "port", "bind", "versions", "config", "config set"} {
 		args := append(strings.Fields(sub), "--help")
 		if sub == "compose" {
 			continue // flags go to docker compose
@@ -286,5 +286,53 @@ func TestDefaultAdminPathCLI(t *testing.T) {
 				t.Fatalf("get default: %s %v", e.Out.String(), err)
 			}
 		}
+	}
+}
+
+func TestBindCLI(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "stack")
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	bin := t.TempDir()
+	script := "#!/bin/sh\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	// Default read
+	e := moduletest.NewEnv(t, "", Module())
+	if code := e.Run("hosts", "bind"); code != 0 || strings.TrimSpace(e.Out.String()) != "127.0.0.1" {
+		t.Fatalf("bind get default: code=%d, out=%s, err=%s", code, e.Out.String(), e.ErrB.String())
+	}
+
+	// Change via bind
+	e = moduletest.NewEnv(t, "", Module())
+	if code := e.Run("hosts", "bind", "0.0.0.0"); code != 0 || !strings.Contains(e.Out.String(), "0.0.0.0") {
+		t.Fatalf("bind set: code=%d, out=%s, err=%s", code, e.Out.String(), e.ErrB.String())
+	}
+
+	// Check updated
+	e = moduletest.NewEnv(t, "", Module())
+	if code := e.Run("hosts", "bind"); code != 0 || strings.TrimSpace(e.Out.String()) != "0.0.0.0" {
+		t.Fatalf("bind get updated: code=%d, out=%s, err=%s", code, e.Out.String(), e.ErrB.String())
+	}
+
+	// Change via alias host
+	e = moduletest.NewEnv(t, "", Module())
+	if code := e.Run("hosts", "host", "127.0.0.1"); code != 0 || !strings.Contains(e.Out.String(), "127.0.0.1") {
+		t.Fatalf("host alias set: code=%d, out=%s, err=%s", code, e.Out.String(), e.ErrB.String())
+	}
+
+	// Check updated
+	e = moduletest.NewEnv(t, "", Module())
+	if code := e.Run("hosts", "host"); code != 0 || strings.TrimSpace(e.Out.String()) != "127.0.0.1" {
+		t.Fatalf("host alias get: code=%d, out=%s, err=%s", code, e.Out.String(), e.ErrB.String())
+	}
+
+	// Invalid IP
+	e = moduletest.NewEnv(t, "", Module())
+	if code := e.Run("hosts", "bind", "not-an-ip"); code == 0 {
+		t.Fatal("accepted invalid IP")
 	}
 }

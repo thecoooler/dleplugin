@@ -47,7 +47,7 @@ stack lives in ~/.local/share/dleplugin/hosts (DLEPLUGIN_HOSTS_DIR or project_di
 		Args: cobra.NoArgs,
 	}
 	cmd.AddCommand(upCmd(rt), downCmd(rt), composeCmd(rt), listCmd(rt), addCmd(rt), removeCmd(rt),
-		getCmd(rt), setCmd(rt), pathCmd(rt), portCmd(rt), versionsCmd(rt), configCmd(rt))
+		getCmd(rt), setCmd(rt), pathCmd(rt), portCmd(rt), bindCmd(rt), versionsCmd(rt), configCmd(rt))
 	return cmd
 }
 
@@ -534,6 +534,35 @@ func portCmd(rt *app.Runtime) *cobra.Command {
 				return err
 			}
 			rt.UI.Successf("Port %d, example address: %s", port, s.HostURL(s.Domain("NAME")))
+			return nil
+		},
+	}
+}
+
+func bindCmd(rt *app.Runtime) *cobra.Command {
+	return &cobra.Command{
+		Use:     "bind [ADDRESS]",
+		Aliases: []string{"host", "address"},
+		Short:   "Show or change the Apache HTTP bind address (shared by all hosts)",
+		Example: "  dleplugin hosts bind            # current bind address\n" +
+			"  dleplugin hosts bind 127.0.0.1  # allow local connections only\n" +
+			"  dleplugin hosts bind 0.0.0.0    # allow external connections\n" +
+			"  dleplugin hosts host 127.0.0.1  # alias",
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, s, err := env(rt)
+			if err != nil {
+				return err
+			}
+			if len(args) == 0 {
+				rt.UI.Info(s.BindAddress())
+				return nil
+			}
+			address := args[0]
+			if err := host.SetBindAddress(s, address, stepper(rt)); err != nil {
+				return err
+			}
+			rt.UI.Successf("Bind address %s", s.BindAddress())
 			return nil
 		},
 	}

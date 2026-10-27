@@ -267,3 +267,11 @@ func (s *Stack) HTTPPort() string {
 	}
 	return "80" // default in docker-compose.yml
 }
+
+// BindAddress returns the Apache bind address from .env.
+func (s *Stack) BindAddress() string {
+	if addr := s.Env["BIND_ADDRESS"]; addr != "" {
+		return addr
+	}
+	return "127.0.0.1" // default in docker-compose.yml
+}

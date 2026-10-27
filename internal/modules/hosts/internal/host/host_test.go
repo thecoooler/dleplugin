@@ -328,3 +328,37 @@ esac
 		t.Fatalf("database binding was not reconciled: %s", got)
 	}
 }
+
+func TestBindAddressAppliesAllServicesAndRestoresOnFailure(t *testing.T) {
+	s := isolatedStack(t)
+	calls, fail := fakeDocker(t)
+	if err := SetBindAddress(s, "0.0.0.0", func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	if s.BindAddress() != "0.0.0.0" {
+		t.Fatal("bind address was not updated")
+	}
+	got := readTestFile(t, calls)
+	if !strings.Contains(got, "up -d ") || strings.Contains(got, "up -d apache") {
+		t.Fatalf("bind address change did not apply configuration to all services: %s", got)
+	}
+	if err := os.WriteFile(fail, []byte("up -d"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetBindAddress(s, "127.0.0.1", func(string) {}); err == nil {
+		t.Fatal("failed compose command reported success")
+	}
+	if s.BindAddress() != "0.0.0.0" {
+		t.Fatal("previous bind address was not restored")
+	}
+}
+
+func TestBindAddressValidatesIP(t *testing.T) {
+	s := isolatedStack(t)
+	if err := SetBindAddress(s, "invalid-ip", func(string) {}); err == nil {
+		t.Fatal("accepted invalid IP address")
+	}
+	if s.BindAddress() != "127.0.0.1" {
+		t.Fatal("bind address changed on validation error")
+	}
+}
