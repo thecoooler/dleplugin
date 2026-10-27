@@ -28,7 +28,6 @@ services:
       - ./www:/var/www                                   # site files
       - ./config/apache/sites:/etc/apache2/sites-enabled # virtual hosts
       - ./logs/apache:/var/log/apache2
-    environment:
     depends_on: [php85, php74]
 
   php85:
