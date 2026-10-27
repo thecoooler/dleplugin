@@ -18,16 +18,15 @@ import (
 )
 
 type publishedPort struct {
-	service, containerPort, key, port string
+	service, containerPort, key, port, address string
 }
 
 // CheckPorts checks the host ports before compose starts building or recreating
 // containers. A running container belonging to this stack may keep its port.
 func (s *Stack) CheckPorts(ctx context.Context) error {
-	address := s.composeValue("BIND_ADDRESS", "0.0.0.0")
 	ports := []publishedPort{
-		{"apache", "80/tcp", "HTTP_PORT", s.composeValue("HTTP_PORT", "80")},
-		{"db", "3306/tcp", "DB_PORT", s.composeValue("DB_PORT", "3306")},
+		{"apache", "80/tcp", "HTTP_PORT", s.composeValue("HTTP_PORT", "80"), s.composeValue("BIND_ADDRESS", "127.0.0.1")},
+		{"db", "3306/tcp", "DB_PORT", s.composeValue("DB_PORT", "3307"), s.composeValue("DB_BIND_ADDRESS", "127.0.0.1")},
 	}
 	for i, p := range ports {
 		n, err := strconv.Atoi(p.port)
@@ -36,24 +35,26 @@ func (s *Stack) CheckPorts(ctx context.Context) error {
 		}
 		ports[i].port = strconv.Itoa(n)
 	}
-	if ports[0].port == ports[1].port {
+	if ports[0].port == ports[1].port && ports[0].address == ports[1].address {
 		return fmt.Errorf("HTTP_PORT and DB_PORT both use port %s; configure different ports in %s", ports[0].port, filepath.Join(s.Dir, ".env"))
 	}
 	for _, p := range ports {
-		endpoint := net.JoinHostPort(address, p.port)
+		endpoint := net.JoinHostPort(p.address, p.port)
 		listener, err := net.Listen("tcp", endpoint)
 		if err == nil {
-			listener.Close()
+			// Hold the first port while checking the second so overlapping
+			// configured bindings are detected even when both are initially free.
+			defer listener.Close()
 			continue
 		}
 		busy, permission := classifyListenError(err, runtime.GOOS)
 		if permission {
 			// Windows may report access denied for an exclusive socket. A
 			// successful connection distinguishes it from a privileged port.
-			dialAddress := address
-			if address == "0.0.0.0" {
+			dialAddress := p.address
+			if p.address == "0.0.0.0" {
 				dialAddress = "127.0.0.1"
-			} else if address == "::" {
+			} else if p.address == "::" {
 				dialAddress = "::1"
 			}
 			conn, dialErr := net.DialTimeout("tcp", net.JoinHostPort(dialAddress, p.port), 250*time.Millisecond)
@@ -67,7 +68,7 @@ func (s *Stack) CheckPorts(ctx context.Context) error {
 		if !busy {
 			return fmt.Errorf("check %s (%s): %w", p.key, endpoint, err)
 		}
-		if s.ownsPort(ctx, address, p) {
+		if s.ownsPort(ctx, p.address, p) {
 			continue
 		}
 		if err := ctx.Err(); err != nil {

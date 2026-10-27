@@ -37,6 +37,7 @@ func TestCheckPorts(t *testing.T) {
 	httpPort := fmt.Sprint(http.Addr().(*net.TCPAddr).Port)
 	dbPort := fmt.Sprint(db.Addr().(*net.TCPAddr).Port)
 	t.Setenv("BIND_ADDRESS", "127.0.0.1")
+	t.Setenv("DB_BIND_ADDRESS", "127.0.0.1")
 	t.Setenv("HTTP_PORT", httpPort)
 	t.Setenv("DB_PORT", dbPort)
 	// Prevent an unrelated local Docker installation from claiming a test port.
@@ -60,6 +61,44 @@ func TestCheckPorts(t *testing.T) {
 	t.Setenv("HTTP_PORT", "invalid")
 	if err := s.CheckPorts(context.Background()); err == nil || !strings.Contains(err.Error(), "invalid HTTP_PORT") {
 		t.Fatalf("invalid port: %v", err)
+	}
+}
+
+func TestCheckPortsIndependentAddresses(t *testing.T) {
+	db, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	dbPort := fmt.Sprint(db.Addr().(*net.TCPAddr).Port)
+	other, err := net.Listen("tcp", net.JoinHostPort("127.0.0.2", dbPort))
+	if err != nil {
+		t.Skipf("second loopback address unavailable: %v", err)
+	}
+	other.Close()
+	http, err := net.Listen("tcp", "127.0.0.2:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpPort := fmt.Sprint(http.Addr().(*net.TCPAddr).Port)
+	http.Close()
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("BIND_ADDRESS", "127.0.0.2")
+	t.Setenv("DB_BIND_ADDRESS", "127.0.0.1")
+	t.Setenv("HTTP_PORT", httpPort)
+	t.Setenv("DB_PORT", dbPort)
+	s := &Stack{Dir: t.TempDir()}
+	if err := s.CheckPorts(context.Background()); err == nil || !strings.Contains(err.Error(), "DB_PORT") || !strings.Contains(err.Error(), "already in use") {
+		t.Fatalf("database address conflict: %v", err)
+	}
+	db.Close()
+	t.Setenv("HTTP_PORT", dbPort)
+	if err := s.CheckPorts(context.Background()); err != nil {
+		t.Fatalf("same port on independent addresses: %v", err)
+	}
+	t.Setenv("BIND_ADDRESS", "0.0.0.0")
+	if err := s.CheckPorts(context.Background()); err == nil || !strings.Contains(err.Error(), "DB_PORT") || !strings.Contains(err.Error(), "already in use") {
+		t.Fatalf("overlapping bindings: %v", err)
 	}
 }
 
@@ -166,6 +205,7 @@ func TestCheckPortsAllowsRunningStack(t *testing.T) {
 	t.Setenv("DLEPLUGIN_TEST_DOCKER_RESULT", result)
 	t.Setenv("PATH", bin)
 	t.Setenv("BIND_ADDRESS", "127.0.0.1")
+	t.Setenv("DB_BIND_ADDRESS", "127.0.0.1")
 	t.Setenv("COMPOSE_PROJECT_NAME", "dleplugin-hosts")
 	t.Setenv("HTTP_PORT", port)
 	t.Setenv("DB_PORT", dbPort)
