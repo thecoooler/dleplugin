@@ -108,6 +108,9 @@ func upCmd(rt *app.Runtime) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := s.CheckPorts(cmd.Context()); err != nil {
+				return err
+			}
 			hash, pending, err := s.Pending()
 			if err != nil {
 				return err

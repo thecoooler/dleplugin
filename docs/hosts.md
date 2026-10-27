@@ -99,6 +99,14 @@ export DLEPLUGIN_HOSTS_HTTP_PORT=18080 DLEPLUGIN_HOSTS_DB_PORT=13307
 dleplugin hosts up
 ```
 
+Before building, `hosts up` checks the configured HTTP and database ports on
+the local machine. If a port is occupied, free it or use `dleplugin hosts port 8080`
+for HTTP; change `DB_PORT` in the stack `.env` for MariaDB. Ports already
+published by this stack's running containers are allowed. This is a preflight
+check: another process can take a port afterward, and Docker still makes the
+final decision when publishing it. For a remote Docker daemon, the ports are
+checked on the CLI machine, not the remote host.
+
 The stack directory is created by the first command that needs it. Service
 files are overwritten when a new binary embeds different ones, so edits in
 them are lost: configure the stack through `.env`. Put your own vhosts in
