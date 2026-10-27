@@ -307,6 +307,7 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 				Admin:       credentials,
 				AdminPath:   cfg.AdminPath(),
 				SiteOffline: siteOffline,
+				Warn:        rt.UI.Warning,
 			}, stepper(rt))
 			if err != nil {
 				return err

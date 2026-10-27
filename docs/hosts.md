@@ -146,14 +146,18 @@ CLI. The administrator email is `admin@example.com`. The stack must be running
 (`dleplugin hosts up`).
 
 The PHP version is chosen by the DLE version: PHP 7.4 for 11.0–16.0, PHP 8.5
-for 16.1+. `default_php` defaults to `auto`; a saved numeric value is a
-preference used only when it suits the chosen DLE (an old `default_php: 8.5`
-does not force DLE 11.0 onto PHP 8.5). `--php auto` uses the standard choice
-regardless of the config; `--php VERSION` is a manual override. A PHP version
-missing from `php_versions` is an error. The minimum PHP version is checked
-before the database is created (16.1+ needs PHP 8.0+, 16.0 needs 7.4+, 15.x
+for 16.1+. `default_php` defaults to `auto`; a saved numeric value is used as
+the default even if it may be incompatible with DLE. `--php auto` uses the
+standard choice regardless of the config; `--php VERSION` is a manual override.
+A PHP version outside the automatic runtime family triggers a compatibility
+warning. PHP 7.4 also triggers a
+security warning, including when selected automatically. These family checks
+do not guarantee compatibility with every DLE release or plugin. A PHP version
+missing from `php_versions` is an error. The compatibility warning accounts for
+the installer minimum (16.1+ needs PHP 8.0+, 16.0 needs 7.4+, 15.x
 needs 7.2+, 14.3 needs 7.0+, 12.1–14.2 need 5.4+, 11.2–12.0 need 5.3.7+,
-11.0–11.1 need 5.3+). Running old DLE on a new PHP is not supported.
+11.0–11.1 need 5.3+). A choice below this minimum is not blocked, but the DLE
+installer may fail. Running old DLE on a new PHP is not supported.
 
 On error everything created is rolled back.
 

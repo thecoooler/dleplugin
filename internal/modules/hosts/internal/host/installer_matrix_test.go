@@ -28,7 +28,7 @@ func TestInstallerMatrix(t *testing.T) {
 		installed++
 		t.Run(version, func(t *testing.T) {
 			name := "v" + strings.ReplaceAll(version, ".", "-")
-			result, err := Add(s, AddOptions{Name: name, DLE: version, DefaultPHP: "8.5", PHPVersions: []string{"7.4", "8.5"},
+			result, err := Add(s, AddOptions{Name: name, DLE: version, DefaultPHP: "auto", PHPVersions: []string{"7.4", "8.5"},
 				DistsDir: dir, AdminPath: "control.php", Admin: Credentials{"owner", "matrix-test-password"}}, func(msg string) { t.Log(msg) })
 			if err != nil {
 				t.Fatal(err)
