@@ -24,6 +24,7 @@ dleplugin hosts path shop                          # host files: <stack>/www/sho
 dleplugin hosts path shop --container              # the same inside the containers: /var/www/shop
 dleplugin hosts remove shop
 dleplugin hosts port 80                            # Apache port of all hosts
+dleplugin hosts bind 127.0.0.1                     # Apache bind address of all hosts
 dleplugin hosts path                               # stack directory
 dleplugin hosts compose logs -f apache             # any docker compose command
 dleplugin hosts down                               # stop the stack
@@ -312,6 +313,10 @@ public hosts do not change with the internal port; update the backend address
 of your reverse proxy separately. When the port is busy, the previous port is
 restored. `remove` only removes hosts created by `add` (the registry is
 `data/hosts.json`).
+
+`bind ADDRESS` (aliases: `host`, `address`) changes `BIND_ADDRESS` in `.env`, applies
+the Compose configuration to all services, and restores the previous address on error.
+Without arguments, it prints the current Apache bind address (`127.0.0.1` by default).
 
 `path NAME` prints only the path, so it is handy in other commands:
 `cd "$(dleplugin hosts path shop)"`. It works for any directory in `www/`.

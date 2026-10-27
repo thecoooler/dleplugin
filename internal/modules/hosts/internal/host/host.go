@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -530,6 +531,32 @@ func clearPageCache(hostDir string) error {
 		if err := os.Remove(f); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// SetBindAddress switches the Apache bind address of the whole stack.
+func SetBindAddress(s *stack.Stack, address string, log func(string)) error {
+	ip := net.ParseIP(address)
+	if ip == nil {
+		return fmt.Errorf("invalid address %q: expected an IP address (e.g. 127.0.0.1 or 0.0.0.0)", address)
+	}
+	norm := ip.String()
+	prev := s.BindAddress()
+
+	log("BIND_ADDRESS=" + norm + " in .env")
+	if err := s.SetDotEnv("BIND_ADDRESS", norm); err != nil {
+		return err
+	}
+	log("applying stack configuration")
+	if err := s.Compose(nil, "up", "-d"); err != nil {
+		if rerr := s.SetDotEnv("BIND_ADDRESS", prev); rerr != nil {
+			return fmt.Errorf("%w; restoring bind address %s in .env failed: %v", err, prev, rerr)
+		}
+		if rerr := s.Compose(nil, "up", "-d"); rerr != nil {
+			return fmt.Errorf("%w; restoring bind address %s failed too: %v", err, prev, rerr)
+		}
+		return fmt.Errorf("%w (bind address restored to %s)", err, prev)
 	}
 	return nil
 }
