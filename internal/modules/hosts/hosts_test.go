@@ -1,6 +1,8 @@
 package hosts
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +13,25 @@ import (
 	config "github.com/thecoooler/dleplugin/internal/modules/hosts/internal/hostconfig"
 	"github.com/thecoooler/dleplugin/internal/modules/moduletest"
 )
+
+func TestUpReportsOccupiedPortBeforeCompose(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	port := fmt.Sprint(ln.Addr().(*net.TCPAddr).Port)
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", filepath.Join(t.TempDir(), "stack"))
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	t.Setenv("BIND_ADDRESS", "127.0.0.1")
+	t.Setenv("HTTP_PORT", port)
+	t.Setenv("DB_PORT", "3307")
+	t.Setenv("PATH", t.TempDir())
+	code, msg := run(t, "", "up")
+	if code == 0 || !strings.Contains(msg, "HTTP_PORT") || !strings.Contains(msg, port) || !strings.Contains(msg, "already in use") {
+		t.Fatalf("up: exit %d, %s", code, msg)
+	}
+}
 
 // run executes dleplugin hosts with args and stdin; it returns the exit code
 // and the error output.
