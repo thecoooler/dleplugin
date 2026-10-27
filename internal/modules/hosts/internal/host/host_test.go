@@ -275,3 +275,56 @@ func TestLegacyRegistryNotMigrated(t *testing.T) {
 		t.Fatal("default host advertised externally")
 	}
 }
+
+func TestPortAppliesAllServicesAndRestoresOnFailure(t *testing.T) {
+	s := isolatedStack(t)
+	calls, fail := fakeDocker(t)
+	if err := SetHTTPPort(s, 8091, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	got := readTestFile(t, calls)
+	if !strings.Contains(got, "up -d ") || strings.Contains(got, "up -d apache") {
+		t.Fatalf("port change did not apply configuration to all services: %s", got)
+	}
+	if err := os.WriteFile(fail, []byte("up -d"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetHTTPPort(s, 8092, func(string) {}); err == nil {
+		t.Fatal("failed compose command reported success")
+	}
+	if s.HTTPPort() != "8091" {
+		t.Fatal("previous HTTP port was not restored")
+	}
+}
+
+func TestPortAppliesChangedDatabaseBinding(t *testing.T) {
+	s := isolatedStack(t)
+	bin := t.TempDir()
+	actual := filepath.Join(t.TempDir(), "database-binding")
+	if err := os.WriteFile(actual, []byte("0.0.0.0"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Model Compose: a service-specific up leaves the database untouched,
+	// while an unscoped up reconciles its published address with .env.
+	script := `#!/bin/sh
+case "$*" in
+  *"up -d apache"*) ;;
+  *"up -d"*) sed -n 's/^DB_BIND_ADDRESS=//p' "$TEST_STACK_DIR/.env" > "$TEST_DB_BINDING" ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TEST_STACK_DIR", s.Dir)
+	t.Setenv("TEST_DB_BINDING", actual)
+	if err := s.SetDotEnv("DB_BIND_ADDRESS", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetHTTPPort(s, 8093, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(readTestFile(t, actual)); got != "127.0.0.1" {
+		t.Fatalf("database binding was not reconciled: %s", got)
+	}
+}

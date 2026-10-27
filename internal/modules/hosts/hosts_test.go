@@ -1,6 +1,7 @@
 package hosts
 
 import (
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,9 +9,81 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/host"
 	config "github.com/thecoooler/dleplugin/internal/modules/hosts/internal/hostconfig"
+	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/stack"
 	"github.com/thecoooler/dleplugin/internal/modules/moduletest"
 )
+
+func TestGeneratedCredentialsStoredPrivately(t *testing.T) {
+	s := &stack.Stack{Dir: t.TempDir()}
+	path, err := saveGeneratedCredentials(s, "shop", host.Credentials{Login: "owner", Password: "test-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("credential file permissions: %v %v", info, err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "Host: \"shop\"\nLogin: owner\nPassword: test-secret\n" {
+		t.Fatal("credentials file contents incorrect", err)
+	}
+}
+
+func TestAdministratorPasswordDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("DLEPLUGIN_HOSTS_ADMIN_PASSWORD", "")
+	if err := os.Unsetenv("DLEPLUGIN_HOSTS_ADMIN_PASSWORD"); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &cobra.Command{}
+	cmd.Flags().String("admin-login", "admin", "")
+	cmd.Flags().String("admin-password", "", "")
+	first, generated, err := adminCredentials(cmd, "admin", "")
+	if err != nil || !generated {
+		t.Fatal("password was not generated", err)
+	}
+	decoded, err := hex.DecodeString(first.Password)
+	if err != nil || len(decoded) != 24 {
+		t.Fatal("generated password is not 24 random bytes")
+	}
+	second, _, err := adminCredentials(cmd, "admin", "")
+	if err != nil || first.Password == second.Password {
+		t.Fatal("administrator passwords are not independent", err)
+	}
+	t.Setenv("DLEPLUGIN_HOSTS_ADMIN_PASSWORD", "explicit-env")
+	c, generated, err := adminCredentials(cmd, "admin", "")
+	if err != nil || generated || c.Password != "explicit-env" {
+		t.Fatal("environment password was not honored", err)
+	}
+	if err := cmd.Flags().Set("admin-password", "explicit-flag"); err != nil {
+		t.Fatal(err)
+	}
+	c, generated, err = adminCredentials(cmd, "admin", "explicit-flag")
+	if err != nil || generated || c.Password != "explicit-flag" {
+		t.Fatal("flag password did not override environment", err)
+	}
+	if err := cmd.Flags().Set("admin-password", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := adminCredentials(cmd, "admin", ""); err == nil {
+		t.Fatal("explicit empty password accepted")
+	}
+}
+
+func TestFailedAddCleansGeneratedCredentials(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	e := moduletest.NewEnv(t, "", Module())
+	if code := e.Run("hosts", "add", "shop", "--dist", filepath.Join(t.TempDir(), "missing.zip")); code == 0 {
+		t.Fatal("missing archive accepted")
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "data", "credentials"))
+	if err != nil || len(entries) != 0 {
+		t.Fatal("credentials retained after failed add", err)
+	}
+}
 
 // run executes dleplugin hosts with args and stdin; it returns the exit code
 // and the error output.
