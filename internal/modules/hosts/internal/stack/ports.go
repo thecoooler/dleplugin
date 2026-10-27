@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -45,8 +46,8 @@ func (s *Stack) CheckPorts(ctx context.Context) error {
 			listener.Close()
 			continue
 		}
-		busy := errors.Is(err, syscall.EADDRINUSE)
-		if errors.Is(err, os.ErrPermission) {
+		busy, permission := classifyListenError(err, runtime.GOOS)
+		if permission {
 			// Windows may report access denied for an exclusive socket. A
 			// successful connection distinguishes it from a privileged port.
 			dialAddress := address
@@ -83,6 +84,17 @@ func (s *Stack) CheckPorts(ctx context.Context) error {
 	return nil
 }
 
+func classifyListenError(err error, goos string) (busy, permission bool) {
+	busy = errors.Is(err, syscall.EADDRINUSE)
+	permission = errors.Is(err, os.ErrPermission)
+	if goos == "windows" {
+		// Winsock errors are not translated to Go's portable errno values.
+		busy = busy || errors.Is(err, syscall.Errno(10048))             // WSAEADDRINUSE
+		permission = permission || errors.Is(err, syscall.Errno(10013)) // WSAEACCES
+	}
+	return busy, permission
+}
+
 // composeValue follows Compose's environment-over-.env precedence and its
 // ${KEY:-default} handling for empty values in the embedded compose file.
 func (s *Stack) composeValue(key, fallback string) string {
@@ -114,7 +126,7 @@ func (s *Stack) ownsPort(ctx context.Context, address string, p publishedPort) b
 
 func matchesOwnedPort(output, dir, address string, p publishedPort) bool {
 	parts := strings.SplitN(output, "\t", 4)
-	if len(parts) != 4 || parts[0] != "true" || filepath.Clean(parts[1]) != filepath.Clean(dir) || parts[2] != p.service {
+	if len(parts) != 4 || parts[0] != "true" || !sameStackDir(parts[1], dir, runtime.GOOS) || parts[2] != p.service {
 		return false
 	}
 	var ports map[string][]dockerPortBinding
@@ -127,4 +139,12 @@ func matchesOwnedPort(output, dir, address string, p publishedPort) bool {
 		}
 	}
 	return false
+}
+
+func sameStackDir(a, b, goos string) bool {
+	a, b = filepath.Clean(a), filepath.Clean(b)
+	if goos == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
