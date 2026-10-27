@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -70,6 +71,43 @@ func TestExistingDataRequiresOriginalEnv(t *testing.T) {
 	}
 }
 
+func TestMissingDotEnvWithExistingHosts(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "data", "hosts.json"), []byte(`[{"name":"shop"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(dir); err == nil || !strings.Contains(err.Error(), "restore the original .env and MariaDB data") {
+		t.Fatal("missing credentials for registered hosts accepted", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".env")); !os.IsNotExist(err) {
+		t.Fatal("created credentials for an existing host")
+	}
+}
+
+func TestConcurrentDotEnvCreation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := writeDefaultDotEnv(path); err != nil {
+				t.Errorf("create .env: %v", err)
+				return
+			}
+			env, err := readDotEnv(path)
+			if err != nil || env["DB_ROOT_PASSWORD"] == "" || env["DB_PASSWORD"] == "" || env["GID"] == "" {
+				t.Errorf("observed an incomplete .env: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 func TestExplicitDatabaseDefaults(t *testing.T) {
 	t.Setenv("DLEPLUGIN_HOSTS_DB_ROOT_PASSWORD", "custom-root")
 	t.Setenv("DLEPLUGIN_HOSTS_DB_PASSWORD", "custom-user")
@@ -80,6 +118,71 @@ func TestExplicitDatabaseDefaults(t *testing.T) {
 	}
 	if s.Env["DB_ROOT_PASSWORD"] != "custom-root" || s.Env["DB_PASSWORD"] != "custom-user" || s.Env["DB_BIND_ADDRESS"] != "192.0.2.10" {
 		t.Fatal("explicit settings were not preserved")
+	}
+}
+
+func TestEmptyDatabasePasswordDefaultsRejected(t *testing.T) {
+	for _, key := range []string{"DB_ROOT_PASSWORD", "DB_PASSWORD"} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv("DLEPLUGIN_HOSTS_"+key, "")
+			dir := t.TempDir()
+			if _, err := Open(dir); err == nil || !strings.Contains(err.Error(), "must not be empty") {
+				t.Fatalf("empty %s accepted: %v", key, err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, ".env")); !os.IsNotExist(err) {
+				t.Fatal("created an .env with an empty password")
+			}
+		})
+	}
+}
+
+func TestDanglingDotEnvRejected(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Symlink(filepath.Join(dir, "missing"), filepath.Join(dir, ".env")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := Open(dir); err == nil || !strings.Contains(err.Error(), "dangling symbolic link") {
+		t.Fatal("dangling .env accepted", err)
+	}
+}
+
+func TestUnsafeLocalhostSeedMigration(t *testing.T) {
+	const oldSeed = `<?php
+echo '<h2>PHP ' . PHP_VERSION . '</h2>';
+try {
+    $pdo = new PDO('mysql:host=' . getenv('DB_HOST') . ';dbname=' . getenv('DB_NAME') . ';charset=utf8mb4',
+        getenv('DB_USER'), getenv('DB_PASSWORD'));
+    echo '<p>MariaDB: OK, version ' . $pdo->query('SELECT VERSION()')->fetchColumn() . '</p>';
+} catch (Throwable $e) {
+    echo '<p>MariaDB: error: ' . htmlspecialchars($e->getMessage()) . '</p>';
+}
+phpinfo();
+`
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(s.WWWDir(), "localhost", "index.php")
+	if err := os.WriteFile(path, []byte(oldSeed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(s.Dir); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := os.ReadFile(path)
+	if err != nil || strings.Contains(string(updated), "phpinfo(") || strings.Contains(string(updated), "$e->getMessage()") {
+		t.Fatal("unsafe stock page was not replaced", err)
+	}
+	custom := oldSeed + "// user modified\n"
+	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(s.Dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != custom {
+		t.Fatal("custom page was changed", err)
 	}
 }
 

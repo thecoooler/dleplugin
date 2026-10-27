@@ -294,7 +294,7 @@ func addCmd(rt *app.Runtime) *cobra.Command {
 			}
 			var credentialFile string
 			if generatedPassword {
-				credentialFile, err = saveGeneratedCredentials(s, credentials)
+				credentialFile, err = saveGeneratedCredentials(s, args[0], credentials)
 				if err != nil {
 					return err
 				}
@@ -367,7 +367,7 @@ func adminCredentials(cmd *cobra.Command, login, password string) (host.Credenti
 }
 
 // Generated credentials are outside www and never printed to the terminal.
-func saveGeneratedCredentials(s *stack.Stack, credentials host.Credentials) (string, error) {
+func saveGeneratedCredentials(s *stack.Stack, name string, credentials host.Credentials) (string, error) {
 	dir := filepath.Join(s.Dir, "data", "credentials")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create credentials directory: %w", err)
@@ -377,7 +377,7 @@ func saveGeneratedCredentials(s *stack.Stack, credentials host.Credentials) (str
 		return "", fmt.Errorf("create credentials file: %w", err)
 	}
 	path := f.Name()
-	if _, err = fmt.Fprintf(f, "Login: %s\nPassword: %s\n", credentials.Login, credentials.Password); err != nil {
+	if _, err = fmt.Fprintf(f, "Host: %q\nLogin: %s\nPassword: %s\n", name, credentials.Login, credentials.Password); err != nil {
 		f.Close()
 		os.Remove(path)
 		return "", fmt.Errorf("write credentials file: %w", err)

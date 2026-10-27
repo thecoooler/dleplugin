@@ -17,7 +17,7 @@ import (
 
 func TestGeneratedCredentialsStoredPrivately(t *testing.T) {
 	s := &stack.Stack{Dir: t.TempDir()}
-	path, err := saveGeneratedCredentials(s, host.Credentials{Login: "owner", Password: "test-secret"})
+	path, err := saveGeneratedCredentials(s, "shop", host.Credentials{Login: "owner", Password: "test-secret"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestGeneratedCredentialsStoredPrivately(t *testing.T) {
 		t.Fatalf("credential file permissions: %v %v", info, err)
 	}
 	data, err := os.ReadFile(path)
-	if err != nil || string(data) != "Login: owner\nPassword: test-secret\n" {
+	if err != nil || string(data) != "Host: \"shop\"\nLogin: owner\nPassword: test-secret\n" {
 		t.Fatal("credentials file contents incorrect", err)
 	}
 }

@@ -209,8 +209,17 @@ func (s *Stack) ReloadApache() error {
 // SetDotEnv changes (or adds) KEY=VALUE in .env, keeping the other lines.
 func (s *Stack) SetDotEnv(key, value string) error {
 	path := filepath.Join(s.Dir, ".env")
+	// Preserve an explicitly configured symlink while replacing its target.
+	path, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
 	data, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err != nil {
 		return err
 	}
 	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
@@ -224,7 +233,27 @@ func (s *Stack) SetDotEnv(key, value string) error {
 	if !found {
 		lines = append(lines, key+"="+value)
 	}
-	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(path), ".env-update-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if err := f.Chmod(info.Mode().Perm()); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.WriteString(strings.Join(lines, "\n") + "\n"); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(f.Name(), path); err != nil {
 		return err
 	}
 	s.Env[key] = value

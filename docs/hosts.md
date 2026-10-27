@@ -14,7 +14,7 @@ dleplugin hosts config show
 
 dleplugin hosts versions                           # DLE (from dists_dir) and PHP versions
 dleplugin hosts add shop --dle 21.0                # http://shop.localhost/
-dleplugin hosts add shop2 --admin-login owner --admin-password secret
+dleplugin hosts add shop2 --admin-login owner       # generated password in a private file
 dleplugin hosts add public --site-offline off       # create an open site
 dleplugin hosts get shop site_offline               # on: closed, off: open
 dleplugin hosts set shop site_offline off           # open an existing site
@@ -79,12 +79,17 @@ container name prefix, default `dleplugin-hosts`), `BIND_ADDRESS` (Apache addres
 `DB_PORT` (default `3307`), database passwords, `UID`/`GID`. MariaDB is published
 only on the host's IPv4 loopback by default; PHP connects over the Docker network.
 Set `DB_BIND_ADDRESS` explicitly if remote database access is required and
-restrict access with a firewall. HTTP and database bindings are independent.
+prefer a private or VPN interface. Docker-published ports can bypass ordinary
+host firewall rules such as UFW's INPUT rules; restrict them using controls that
+apply to Docker forwarding (for example, the Docker `DOCKER-USER` chain when
+using its iptables backend) or an upstream firewall. HTTP and database bindings
+are independent.
 The root and initial `dle` database user passwords are independent random values
 generated on first creation unless explicitly supplied. Values are
 written literally (no `${…}` interpolation); single quotes and line breaks are
-rejected. The file mode is `0600`. When run as root, `UID`/`GID` default to
-`1000`: php-fpm does not run as root. This way you can run a second, isolated
+rejected. The file mode is `0600`. The stack filesystem must support hard links
+for the initial atomic creation of `.env`. When run as root, `UID`/`GID` default
+to `1000`: php-fpm does not run as root. This way you can run a second, isolated
 stack next to the main one, for example for tests:
 
 ```sh
@@ -123,8 +128,11 @@ if `BIND_ADDRESS` was public; add `DB_BIND_ADDRESS` explicitly to retain a
 different database binding. Editing `.env` alone does not change running
 containers: run `dleplugin hosts up` to apply it, and check the effective
 port binding with `dleplugin hosts compose ps`. `hosts port N` also applies
-the Compose configuration to the whole stack. Compose process environment
-variables can override values in `.env`.
+the Compose configuration to the whole stack, including pending database
+changes; if the command fails, only the HTTP port is rolled back. Compose
+process environment variables can override values in `.env`. Before either
+command, check database settings as an altered root password will not change
+the password stored in an existing MariaDB data directory.
 
 MariaDB initialization variables only apply to an empty data directory.
 Changing `DB_ROOT_PASSWORD`, `DB_USER` or `DB_PASSWORD` in `.env`, or upgrading
@@ -132,9 +140,23 @@ the binary, does not rotate accounts in an existing database. Recreating the
 container preserves `data/mariadb/`; deleting that directory destroys the
 databases. Back up the data and change existing passwords in MariaDB itself,
 then update the matching `.env` and site configuration as needed. If `.env`
-is missing while MariaDB data exists, restore the original file instead of
-generating unrelated passwords. Existing weak or compromised credentials must
+is missing while MariaDB data or a nonempty hosts registry exists, restore the
+original file instead of generating unrelated passwords. Existing weak or compromised credentials must
 be rotated explicitly; an upgrade does not repair an already compromised database.
+If the original file is missing, `hosts down` also cannot determine a custom
+Compose project name. To stop a running stack before restoring it, identify its
+containers with Docker and stop those containers explicitly; do not delete the
+database directory to bypass this check.
+
+The old stock `www/localhost/index.php` displayed `phpinfo()`, including PHP
+environment variables that can contain the database password. On stack open,
+the CLI replaces that page only when it exactly matches the old stock file;
+customized pages are preserved and must be checked manually for information
+disclosure. Treat any password exposed through the old page as compromised.
+Sites share PHP container users and the `www/` mount, so this stack does not
+isolate mutually untrusted sites from one another.
+During `hosts add`, the temporary installer listens on an unauthenticated
+loopback port; other users on the same machine can reach it while it runs.
 
 ## Creating a host (`add`)
 
@@ -267,7 +289,8 @@ The administrator login and password come from `--admin-login`,
 the flag takes precedence over the process environment. The login defaults to
 `admin`. If the password is omitted, a random password is generated and saved
 in a mode `0600` file under `data/credentials/`; the command prints its path,
-not the password. Store it securely and remove the file when no longer needed.
+not the password. The file includes the host name. Store it securely and remove
+the file when no longer needed; removing the host does not delete it.
 Explicit empty values are rejected. The login is up to 40 bytes (letters,
 digits, `_`, `.`, `-`), the password up to 72 bytes. DLE itself creates the
 user and hash through its installer. Existing hosts do not change.
