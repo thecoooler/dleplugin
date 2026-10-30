@@ -58,8 +58,9 @@ type App struct {
 	globalSites sitesView
 
 	console struct {
-		lines []string
-		list  ui.ListState
+		visible bool
+		lines   []string
+		list    ui.ListState
 	}
 	consolePercent float32
 	job            *job
@@ -268,6 +269,7 @@ func (a *App) start(title, dir string, args []string, stdin string, done func(co
 			if canceled && code != 0 {
 				a.appendConsole("⚠ " + title + " canceled")
 			} else if code != 0 {
+				a.console.visible = true
 				a.appendConsole("✖ " + title + " failed (exit code " + strconv.Itoa(code) + ")")
 			}
 			if done != nil {

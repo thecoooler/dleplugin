@@ -344,7 +344,10 @@ a project's Sites tab; the Checks tab runs `static`, `test` and `check`.
 New projects are created as `init` does; closed tabs are offered to open again.
 Commands run in process with the documented flags, so they behave as in the
 CLI; their output goes to the window's console, where a running command can be
-canceled. Passwords typed in the app go to the commands through stdin, never
+canceled. The console starts hidden; Show console / Hide console toggles it
+without discarding output, and a failed command opens it automatically.
+Canceling a command does not open it. Passwords typed in the app go to the
+commands through stdin, never
 on a command line, and may be saved where the CLI saves them (the OS
 credential store or `credentials.yaml`, per `DLEPLUGIN_CREDENTIAL_STORE`).
 

@@ -399,6 +399,11 @@ func TestChecksTab(t *testing.T) {
 
 func TestConsole(t *testing.T) {
 	e := newEnv(t)
+	e.settle()
+	e.has("Show console")
+	if e.app.console.visible || e.tt.HasText("Console") {
+		t.Fatal("console is visible at startup")
+	}
 	e.app.selected = pageSettings
 	e.run.output = "\x1b[32m✔ done\x1b[0m\r\nprogress 10%\rprogress 100%\npartial"
 	e.app.start("Build", t.TempDir(), []string{"build"}, "", nil)
@@ -407,7 +412,18 @@ func TestConsole(t *testing.T) {
 	if !slices.Equal(e.app.console.lines, want) {
 		t.Fatalf("console %q", e.app.console.lines)
 	}
+	if e.app.console.visible || e.tt.HasText("partial") {
+		t.Fatal("successful command opened the console")
+	}
+	e.click("Show console")
 	e.has("Build succeeded in 0s")
+	e.has("partial")
+	e.click("Hide console")
+	if e.app.console.visible || e.tt.HasText("partial") {
+		t.Fatal("console did not hide")
+	}
+	e.click("Show console")
+	e.has("partial")
 	e.snapshot("console")
 	e.click("Copy")
 	if e.tt.Clipboard() != strings.Join(want, "\n") {
@@ -801,6 +817,16 @@ func TestCommandFailureAndCancellationMessages(t *testing.T) {
 			e.settle()
 			if got := e.app.console.lines[len(e.app.console.lines)-1]; got != want {
 				t.Fatalf("message %q, want %q", got, want)
+			}
+			if e.app.console.visible == canceled {
+				t.Fatalf("console visible=%v after canceled=%v", e.app.console.visible, canceled)
+			}
+			if !canceled {
+				e.has(want)
+				e.click("Hide console")
+				if e.app.console.visible || e.tt.HasText(want) {
+					t.Fatal("failed command's console did not stay hidden")
+				}
 			}
 		})
 	}

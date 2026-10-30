@@ -24,16 +24,16 @@ func (a *App) projectPage(c *ui.Context, pv *projectView) {
 	}
 	home, _ := os.UserHomeDir()
 	pageHeader(c, pv.title(), shortPath(pv.root, home), func() {
-		if ui.Button(c.Key("open-folder"), "Open folder").Clicked() {
+		if iconButton(c, ui.Button(c.Key("open-folder"), ""), folderIcon, "Open folder").Clicked() {
 			a.openPath(pv.root)
 		}
-		if ui.Button(c.Key("reload"), "Reload").Tooltip("Read dleplugin.yml and the sites again").Clicked() {
+		if iconButton(c, ui.Button(c.Key("reload"), ""), reloadIcon, "Reload").Tooltip("Read dleplugin.yml and the sites again").Clicked() {
 			a.reload(pv)
 		}
-		if ui.Button(c.Key("build"), "Build").Disabled(a.busy()).Tooltip("Write the plugin into dist/").Clicked() {
+		if iconButton(c, ui.Button(c.Key("build"), ""), buildIcon, "Build").Disabled(a.busy()).Tooltip("Write the plugin into dist/").Clicked() {
 			a.build(pv)
 		}
-		if ui.PrimaryButton(c.Key("deploy"), "Deploy…").Disabled(a.busy()).Tooltip("Upload the plugin to saved sites").Clicked() {
+		if iconButton(c, ui.PrimaryButton(c.Key("deploy"), ""), deployIcon, "Deploy…").Disabled(a.busy()).Tooltip("Upload the plugin to saved sites").Clicked() {
 			a.openDeploy(pv)
 		}
 	})

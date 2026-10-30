@@ -26,11 +26,15 @@ func (a *App) view(c *ui.Context) {
 
 	ui.Column(c).Fill().Children(func() {
 		a.tabBar(c)
-		ui.SplitVerticalPercent(c, &a.consolePercent, func() {
-			ui.Column(c).Fill().Children(func() { a.page(c) })
-		}, func() {
-			a.consoleView(c)
-		}).Grow(1)
+		if a.console.visible {
+			ui.SplitVerticalPercent(c, &a.consolePercent, func() {
+				ui.Column(c).Fill().Children(func() { a.page(c) })
+			}, func() {
+				a.consoleView(c)
+			}).Grow(1)
+		} else {
+			ui.Column(c).Grow(1).Children(func() { a.page(c) })
+		}
 	})
 	a.dialogs(c)
 }
@@ -66,8 +70,15 @@ func (a *App) tabBar(c *ui.Context) {
 			})
 		})
 		ui.Row(c).Gap(4).Padding(0, 0, 4).Children(func() {
+			label := "Show console"
+			if a.console.visible {
+				label = "Hide console"
+			}
+			if iconButton(c, ui.Button(c.Key("toggle-console"), ""), consoleIcon, label).Clicked() {
+				a.console.visible = !a.console.visible
+			}
 			a.pageTab(c, pageSites, "Sites", "Deployment sites of every project")
-			a.pageTab(c, pageSettings, "Settings", "")
+			a.pageTab(c, pageSettings, "Settings", "Settings")
 		})
 	})
 }
@@ -110,11 +121,20 @@ func (a *App) projectTab(c *ui.Context, pv *projectView) {
 
 // pageTab is a button showing a page that is not a project.
 func (a *App) pageTab(c *ui.Context, page, label, tooltip string) {
+	text := label
+	if page == pageSettings {
+		text = ""
+	}
 	var b ui.Element
 	if a.selected == page {
-		b = ui.PrimaryButton(c.Key(page), label)
+		b = ui.PrimaryButton(c.Key(page), text)
 	} else {
-		b = ui.Button(c.Key(page), label)
+		b = ui.Button(c.Key(page), text)
+	}
+	if page == pageSettings {
+		b.Label(label).Size(32, 32).Padding(7).Children(func() {
+			ui.Icon(c, settingsIcon).Size(18, 18)
+		})
 	}
 	if tooltip != "" {
 		b.Tooltip(tooltip)
