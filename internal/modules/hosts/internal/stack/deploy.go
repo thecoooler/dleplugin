@@ -1,9 +1,11 @@
 package stack
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -26,23 +28,25 @@ var stackFS embed.FS
 
 const (
 	stackRoot = "files"
+	// Only the exact former seed is replaced; user-edited pages remain untouched.
+	unsafeLocalhostSeedHash = "37664b57e9c4d36ee1a55fcd7b508a290bfefbecb25d5a598c8ab5a43a734551"
 	// stackManifest holds the hash of the service files and their list.
-	stackManifest = ".dlehost-stack"
+	stackManifest = ".dleplugin-hosts-stack"
 	// stackApplied holds the hash of the service files the last hosts up
 	// ran with.
-	stackApplied = ".dlehost-applied"
+	stackApplied = ".dleplugin-hosts-applied"
 )
 
-// DefaultDir is $XDG_DATA_HOME/dlehost, by default ~/.local/share/dlehost.
+// DefaultDir is $XDG_DATA_HOME/dleplugin/hosts, by default ~/.local/share/dleplugin/hosts.
 func DefaultDir() (string, error) {
 	if dir := os.Getenv("XDG_DATA_HOME"); dir != "" {
-		return filepath.Join(dir, "dlehost"), nil
+		return filepath.Join(dir, "dleplugin", "hosts"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".local", "share", "dlehost"), nil
+	return filepath.Join(home, ".local", "share", "dleplugin", "hosts"), nil
 }
 
 type stackFile struct {
@@ -87,7 +91,7 @@ func ensure(dir string) (bool, error) {
 	}
 	hash := hex.EncodeToString(sum.Sum(nil))
 
-	for _, d := range []string{"www", "data", "data/gate", "data/protect", "logs/apache"} {
+	for _, d := range []string{"www", "data", "logs/apache"} {
 		if err := os.MkdirAll(filepath.Join(dir, filepath.FromSlash(d)), 0o755); err != nil {
 			return false, err
 		}
@@ -105,6 +109,11 @@ func ensure(dir string) (bool, error) {
 	update := prevHash != hash
 	for _, f := range files {
 		target := filepath.Join(dir, filepath.FromSlash(f.rel))
+		if f.rel == "www/localhost/index.php" {
+			if err := replaceUnsafeLocalhostSeed(target, f.data); err != nil {
+				return false, err
+			}
+		}
 		_, statErr := os.Stat(target)
 		exists := statErr == nil
 		if f.seed && (!fresh || exists) || !f.seed && !update && exists {
@@ -129,6 +138,28 @@ func ensure(dir string) (bool, error) {
 	}
 	manifest := hash + "\n" + strings.Join(managed, "\n") + "\n"
 	return true, os.WriteFile(manifestPath, []byte(manifest), 0o644)
+}
+
+func replaceUnsafeLocalhostSeed(path string, replacement []byte) error {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(data)
+	if hex.EncodeToString(sum[:]) != unsafeLocalhostSeedHash {
+		return nil
+	}
+	return os.WriteFile(path, replacement, info.Mode().Perm())
 }
 
 // Pending reports that the service files changed after the last hosts up.
@@ -173,20 +204,22 @@ func readStackManifest(p string) (hash string, files []string, err error) {
 // defaultDotEnv lists the keys of a new .env in order; "" is an empty line, "#…" a comment.
 var defaultDotEnv = []struct{ key, value string }{
 	{"#", "Created by dleplugin hosts; not overwritten on updates"},
-	{"#", "Defaults of a new .env can be set with DLEHOST_<KEY> variables"},
+	{"#", "Defaults of a new .env can be set with DLEPLUGIN_HOSTS_<KEY> variables"},
 	{"#", "docker compose project name and container name prefix"},
-	{"COMPOSE_PROJECT_NAME", "dle"},
+	{"COMPOSE_PROJECT_NAME", "dleplugin-hosts"},
 	{"MARIADB_VERSION", "11.4"},
 	{"", ""},
-	{"#", "Address of the apache and MariaDB ports; 127.0.0.1 allows this machine only"},
-	{"BIND_ADDRESS", "0.0.0.0"},
+	{"#", "Apache bind address"},
+	{"BIND_ADDRESS", "127.0.0.1"},
 	{"HTTP_PORT", "80"},
+	{"#", "MariaDB bind address, independent of Apache"},
+	{"DB_BIND_ADDRESS", "127.0.0.1"},
 	{"DB_PORT", "3307"},
 	{"", ""},
-	{"DB_ROOT_PASSWORD", "root"},
+	{"DB_ROOT_PASSWORD", ""},
 	{"DB_NAME", "dle"},
 	{"DB_USER", "dle"},
-	{"DB_PASSWORD", "dle"},
+	{"DB_PASSWORD", ""},
 	{"", ""},
 	{"#", "Owner of the www/ files inside the containers"},
 	{"UID", ""},
@@ -199,13 +232,36 @@ func writeDefaultDotEnv(p string) error {
 	if _, err := os.Stat(p); err == nil || !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	if _, err := os.Lstat(p); err == nil {
+		return errors.New(".env is a dangling symbolic link; restore the original file")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	// MariaDB initialization variables do not change an existing data directory.
+	// Generating a replacement .env would silently create unusable credentials.
+	entries, err := os.ReadDir(filepath.Join(filepath.Dir(p), "data", "mariadb"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if len(entries) != 0 {
+		return errors.New(".env is missing but MariaDB data exists; restore the original .env before starting the stack")
+	}
+	registry, err := os.ReadFile(filepath.Join(filepath.Dir(p), "data", "hosts.json"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err == nil {
+		var hosts []json.RawMessage
+		if json.Unmarshal(registry, &hosts) != nil || len(hosts) != 0 {
+			return errors.New(".env is missing but the hosts registry exists; restore the original .env and MariaDB data")
+		}
+	}
 	uid, gid := os.Getuid(), os.Getgid()
 	// Windows (-1) or root: php-fpm does not run a pool as UID/GID 0
 	if uid <= 0 || gid <= 0 {
 		uid, gid = 1000, 1000
 	}
 	var b strings.Builder
-	var err error
 	for _, kv := range defaultDotEnv {
 		switch kv.key {
 		case "":
@@ -222,15 +278,54 @@ func writeDefaultDotEnv(p string) error {
 		case "GID":
 			value = strconv.Itoa(gid)
 		}
-		if v, ok := os.LookupEnv("DLEHOST_" + kv.key); ok {
+		if v, ok := os.LookupEnv("DLEPLUGIN_HOSTS_" + kv.key); ok {
+			if v == "" && (kv.key == "DB_ROOT_PASSWORD" || kv.key == "DB_PASSWORD") {
+				return fmt.Errorf("DLEPLUGIN_HOSTS_%s must not be empty", kv.key)
+			}
 			if value, err = dotEnvValue(v); err != nil {
-				return fmt.Errorf("DLEHOST_%s: %w", kv.key, err)
+				return fmt.Errorf("DLEPLUGIN_HOSTS_%s: %w", kv.key, err)
+			}
+		} else if kv.key == "DB_ROOT_PASSWORD" || kv.key == "DB_PASSWORD" {
+			if value, err = NewPassword(); err != nil {
+				return fmt.Errorf("generate %s: %w", kv.key, err)
 			}
 		}
 		b.WriteString(kv.key + "=" + value + "\n")
 	}
-	// .env holds database passwords
-	return os.WriteFile(p, []byte(b.String()), 0o600)
+	// Publish only a fully written file, without replacing a concurrent creator.
+	f, err := os.CreateTemp(filepath.Dir(p), ".env-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err = f.WriteString(b.String()); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	if err := os.Link(f.Name(), p); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			// The competing creator must have published a usable file.
+			_, err = os.Stat(p)
+		}
+		return err
+	}
+	return nil
+}
+
+// NewPassword returns 192 bits of cryptographically random data as hex.
+func NewPassword() (string, error) {
+	var b [24]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
 }
 
 var plainDotEnvValue = regexp.MustCompile(`^[A-Za-z0-9_./:@+,-]*$`)

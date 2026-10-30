@@ -1,11 +1,233 @@
 package stack
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
+
+func TestGeneratedDatabaseCredentials(t *testing.T) {
+	first, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, s := range []*Stack{first, second} {
+		if s.Env["BIND_ADDRESS"] != "127.0.0.1" {
+			t.Fatal("HTTP does not default to loopback")
+		}
+		if s.Env["DB_BIND_ADDRESS"] != "127.0.0.1" {
+			t.Fatal("database does not default to loopback")
+		}
+		for _, key := range []string{"DB_ROOT_PASSWORD", "DB_PASSWORD"} {
+			password := s.Env[key]
+			decoded, err := hex.DecodeString(password)
+			if err != nil || len(decoded) != 24 || seen[password] {
+				t.Fatalf("%s must be independently generated from 24 random bytes", key)
+			}
+			seen[password] = true
+		}
+	}
+	reopened, err := Open(first.Dir)
+	if err != nil || reopened.Env["DB_ROOT_PASSWORD"] != first.Env["DB_ROOT_PASSWORD"] || reopened.Env["DB_PASSWORD"] != first.Env["DB_PASSWORD"] {
+		t.Fatal("reopening changed database credentials", err)
+	}
+}
+
+func TestExistingDataRequiresOriginalEnv(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "data", "mariadb")
+	if err := os.MkdirAll(db, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(db, "existing"), []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(dir); err == nil || !strings.Contains(err.Error(), "restore the original .env") {
+		t.Fatal("missing .env with existing database must fail", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".env")); !os.IsNotExist(err) {
+		t.Fatal("created .env for existing database")
+	}
+	old := "BIND_ADDRESS=0.0.0.0\nDB_ROOT_PASSWORD=old\nDB_PASSWORD=old-user\n"
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, ".env"))
+	if err != nil || string(got) != old {
+		t.Fatal("existing .env changed", err)
+	}
+}
+
+func TestMissingDotEnvWithExistingHosts(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "data", "hosts.json"), []byte(`[{"name":"shop"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(dir); err == nil || !strings.Contains(err.Error(), "restore the original .env and MariaDB data") {
+		t.Fatal("missing credentials for registered hosts accepted", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".env")); !os.IsNotExist(err) {
+		t.Fatal("created credentials for an existing host")
+	}
+}
+
+func TestConcurrentDotEnvCreation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := writeDefaultDotEnv(path); err != nil {
+				t.Errorf("create .env: %v", err)
+				return
+			}
+			env, err := readDotEnv(path)
+			if err != nil || env["DB_ROOT_PASSWORD"] == "" || env["DB_PASSWORD"] == "" || env["GID"] == "" {
+				t.Errorf("observed an incomplete .env: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func TestExplicitDatabaseDefaults(t *testing.T) {
+	t.Setenv("DLEPLUGIN_HOSTS_DB_ROOT_PASSWORD", "custom-root")
+	t.Setenv("DLEPLUGIN_HOSTS_DB_PASSWORD", "custom-user")
+	t.Setenv("DLEPLUGIN_HOSTS_DB_BIND_ADDRESS", "192.0.2.10")
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Env["DB_ROOT_PASSWORD"] != "custom-root" || s.Env["DB_PASSWORD"] != "custom-user" || s.Env["DB_BIND_ADDRESS"] != "192.0.2.10" {
+		t.Fatal("explicit settings were not preserved")
+	}
+}
+
+func TestEmptyDatabasePasswordDefaultsRejected(t *testing.T) {
+	for _, key := range []string{"DB_ROOT_PASSWORD", "DB_PASSWORD"} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv("DLEPLUGIN_HOSTS_"+key, "")
+			dir := t.TempDir()
+			if _, err := Open(dir); err == nil || !strings.Contains(err.Error(), "must not be empty") {
+				t.Fatalf("empty %s accepted: %v", key, err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, ".env")); !os.IsNotExist(err) {
+				t.Fatal("created an .env with an empty password")
+			}
+		})
+	}
+}
+
+func TestDanglingDotEnvRejected(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Symlink(filepath.Join(dir, "missing"), filepath.Join(dir, ".env")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := Open(dir); err == nil || !strings.Contains(err.Error(), "dangling symbolic link") {
+		t.Fatal("dangling .env accepted", err)
+	}
+}
+
+func TestUnsafeLocalhostSeedMigration(t *testing.T) {
+	const oldSeed = `<?php
+echo '<h2>PHP ' . PHP_VERSION . '</h2>';
+try {
+    $pdo = new PDO('mysql:host=' . getenv('DB_HOST') . ';dbname=' . getenv('DB_NAME') . ';charset=utf8mb4',
+        getenv('DB_USER'), getenv('DB_PASSWORD'));
+    echo '<p>MariaDB: OK, version ' . $pdo->query('SELECT VERSION()')->fetchColumn() . '</p>';
+} catch (Throwable $e) {
+    echo '<p>MariaDB: error: ' . htmlspecialchars($e->getMessage()) . '</p>';
+}
+phpinfo();
+`
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(s.WWWDir(), "localhost", "index.php")
+	if err := os.WriteFile(path, []byte(oldSeed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(s.Dir); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := os.ReadFile(path)
+	if err != nil || strings.Contains(string(updated), "phpinfo(") || strings.Contains(string(updated), "$e->getMessage()") {
+		t.Fatal("unsafe stock page was not replaced", err)
+	}
+	custom := oldSeed + "// user modified\n"
+	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(s.Dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != custom {
+		t.Fatal("custom page was changed", err)
+	}
+}
+
+func TestComposeDatabaseBinding(t *testing.T) {
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("docker compose not installed")
+	}
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, env, want string
+	}{
+		{"legacy env", "BIND_ADDRESS=0.0.0.0\n", "127.0.0.1"},
+		{"independent address", "BIND_ADDRESS=127.0.0.1\nDB_BIND_ADDRESS=192.0.2.10\n", "192.0.2.10"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(filepath.Join(s.Dir, ".env"), []byte("COMPOSE_PROJECT_NAME=test\n"+tc.env), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("docker", "compose", "--project-directory", s.Dir, "-f", filepath.Join(s.Dir, "docker-compose.yml"), "config", "--format", "json")
+			cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+			output, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("compose config: %v", err)
+			}
+			var config struct {
+				Services map[string]struct {
+					Ports []struct {
+						HostIP    string `json:"host_ip"`
+						Published string `json:"published"`
+					} `json:"ports"`
+				} `json:"services"`
+			}
+			if err := json.Unmarshal(output, &config); err != nil {
+				t.Fatal(err)
+			}
+			ports := config.Services["db"].Ports
+			if len(ports) != 1 || ports[0].HostIP != tc.want || ports[0].Published != "3307" {
+				t.Fatalf("unexpected database port binding: %+v", ports)
+			}
+		})
+	}
+}
 
 func TestEnsure(t *testing.T) {
 	dir := t.TempDir()
@@ -111,20 +333,20 @@ func TestPending(t *testing.T) {
 }
 
 func TestDotEnvDefaultsFromEnvironment(t *testing.T) {
-	t.Setenv("DLEHOST_HTTP_PORT", "8081")
-	t.Setenv("DLEHOST_COMPOSE_PROJECT_NAME", "dle-test")
+	t.Setenv("DLEPLUGIN_HOSTS_HTTP_PORT", "8081")
+	t.Setenv("DLEPLUGIN_HOSTS_COMPOSE_PROJECT_NAME", "dle-test")
 	s, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if s.HTTPPort() != "8081" || s.Env["COMPOSE_PROJECT_NAME"] != "dle-test" || s.Env["DB_PORT"] != "3307" {
-		t.Fatalf(".env: %v", s.Env)
+		t.Fatal(".env did not retain explicit or default non-secret settings")
 	}
 }
 
 func TestDirFromEnvironment(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("DLEHOST_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
 	s, err := Open(filepath.Join(dir, "ignored"))
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +358,7 @@ func TestDirFromEnvironment(t *testing.T) {
 
 func TestDotEnvSecrets(t *testing.T) {
 	const password = `p@ss ${UNSET} #x`
-	t.Setenv("DLEHOST_DB_ROOT_PASSWORD", password)
+	t.Setenv("DLEPLUGIN_HOSTS_DB_ROOT_PASSWORD", password)
 	s, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +374,7 @@ func TestDotEnvSecrets(t *testing.T) {
 		t.Fatalf(".env: mode %o", perm)
 	}
 
-	t.Setenv("DLEHOST_DB_ROOT_PASSWORD", "it's")
+	t.Setenv("DLEPLUGIN_HOSTS_DB_ROOT_PASSWORD", "it's")
 	if _, err := Open(t.TempDir()); err == nil {
 		t.Fatal("value with a single quote accepted")
 	}

@@ -1,0 +1,151 @@
+package stack
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/thecoooler/dleplugin/internal/process"
+)
+
+type publishedPort struct {
+	service, containerPort, key, port, address string
+}
+
+// CheckPorts checks the host ports before compose starts building or recreating
+// containers. A running container belonging to this stack may keep its port.
+func (s *Stack) CheckPorts(ctx context.Context) error {
+	ports := []publishedPort{
+		{"apache", "80/tcp", "HTTP_PORT", s.composeValue("HTTP_PORT", "80"), s.composeValue("BIND_ADDRESS", "127.0.0.1")},
+		{"db", "3306/tcp", "DB_PORT", s.composeValue("DB_PORT", "3307"), s.composeValue("DB_BIND_ADDRESS", "127.0.0.1")},
+	}
+	for i, p := range ports {
+		n, err := strconv.Atoi(p.port)
+		if err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("invalid %s %q: expected a port from 1 to 65535", p.key, p.port)
+		}
+		ports[i].port = strconv.Itoa(n)
+	}
+	if ports[0].port == ports[1].port && ports[0].address == ports[1].address {
+		return fmt.Errorf("HTTP_PORT and DB_PORT both use port %s; configure different ports in %s", ports[0].port, filepath.Join(s.Dir, ".env"))
+	}
+	for _, p := range ports {
+		endpoint := net.JoinHostPort(p.address, p.port)
+		listener, err := net.Listen("tcp", endpoint)
+		if err == nil {
+			// Hold the first port while checking the second so overlapping
+			// configured bindings are detected even when both are initially free.
+			defer listener.Close()
+			continue
+		}
+		busy, permission := classifyListenError(err, runtime.GOOS)
+		if permission {
+			// Windows may report access denied for an exclusive socket. A
+			// successful connection distinguishes it from a privileged port.
+			dialAddress := p.address
+			if p.address == "0.0.0.0" {
+				dialAddress = "127.0.0.1"
+			} else if p.address == "::" {
+				dialAddress = "::1"
+			}
+			conn, dialErr := net.DialTimeout("tcp", net.JoinHostPort(dialAddress, p.port), 250*time.Millisecond)
+			if dialErr == nil {
+				conn.Close()
+				busy = true
+			} else {
+				continue
+			}
+		}
+		if !busy {
+			return fmt.Errorf("check %s (%s): %w", p.key, endpoint, err)
+		}
+		if s.ownsPort(ctx, p.address, p) {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		hint := fmt.Sprintf("change %s in %s", p.key, filepath.Join(s.Dir, ".env"))
+		if p.key == "HTTP_PORT" {
+			hint = "free the port or choose another with: dleplugin hosts port <number>"
+		} else {
+			hint = "free the port or " + hint
+		}
+		return fmt.Errorf("%s port %s for %s is already in use; %s", p.key, endpoint, p.service, hint)
+	}
+	return nil
+}
+
+func classifyListenError(err error, goos string) (busy, permission bool) {
+	busy = errors.Is(err, syscall.EADDRINUSE)
+	permission = errors.Is(err, os.ErrPermission)
+	if goos == "windows" {
+		// Winsock errors are not translated to Go's portable errno values.
+		busy = busy || errors.Is(err, syscall.Errno(10048))             // WSAEADDRINUSE
+		permission = permission || errors.Is(err, syscall.Errno(10013)) // WSAEACCES
+	}
+	return busy, permission
+}
+
+// composeValue follows Compose's environment-over-.env precedence and its
+// ${KEY:-default} handling for empty values in the embedded compose file.
+func (s *Stack) composeValue(key, fallback string) string {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		value = s.Env[key]
+	}
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+type dockerPortBinding struct {
+	HostIP   string
+	HostPort string
+}
+
+func (s *Stack) ownsPort(ctx context.Context, address string, p publishedPort) bool {
+	name := s.composeValue("COMPOSE_PROJECT_NAME", "dleplugin-hosts") + "-" + p.service
+	// Restrict the output to metadata: full container inspection includes secrets.
+	format := "{{.State.Running}}\t{{index .Config.Labels \"com.docker.compose.project.working_dir\"}}\t{{index .Config.Labels \"com.docker.compose.service\"}}\t{{json .NetworkSettings.Ports}}"
+	out, err := s.runner().Output(ctx, process.Command{Name: "docker", Args: []string{"inspect", "--format", format, name}, Dir: s.Dir})
+	if err != nil {
+		return false
+	}
+	return matchesOwnedPort(out, s.Dir, address, p)
+}
+
+func matchesOwnedPort(output, dir, address string, p publishedPort) bool {
+	parts := strings.SplitN(output, "\t", 4)
+	if len(parts) != 4 || parts[0] != "true" || !sameStackDir(parts[1], dir, runtime.GOOS) || parts[2] != p.service {
+		return false
+	}
+	var ports map[string][]dockerPortBinding
+	if err := json.Unmarshal([]byte(parts[3]), &ports); err != nil {
+		return false
+	}
+	for _, binding := range ports[p.containerPort] {
+		if binding.HostIP == address && binding.HostPort == p.port {
+			return true
+		}
+	}
+	return false
+}
+
+func sameStackDir(a, b, goos string) bool {
+	a, b = filepath.Clean(a), filepath.Clean(b)
+	if goos == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}

@@ -1,4 +1,4 @@
-name: dle
+name: dleplugin-hosts
 
 x-php: &php
   restart: unless-stopped
@@ -6,9 +6,6 @@ x-php: &php
     - ./www:/var/www   # the path must match apache
     - ./config/php/php.ini:/usr/local/etc/php/conf.d/zz-custom.ini:ro
     - ./config/php/fpm.conf:/usr/local/etc/php-fpm.d/zz-custom.conf:ro
-    - ./gate:/opt/dlehost/gate:ro         # hosts protect login form
-    - ./data/gate:/var/lib/dlehost/gate   # its sessions
-    - ./data/protect:/opt/dlehost/protect:ro # protect bcrypt hashes
   environment:
     DB_HOST: db
     DB_NAME: ${DB_NAME}
@@ -26,15 +23,11 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME}-apache
     restart: unless-stopped
     ports:
-      - "${BIND_ADDRESS:-0.0.0.0}:${HTTP_PORT:-80}:80"
+      - "${BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-80}:80"
     volumes:
       - ./www:/var/www                                   # site files
       - ./config/apache/sites:/etc/apache2/sites-enabled # virtual hosts
       - ./logs/apache:/var/log/apache2
-      - ./gate:/opt/dlehost/gate:ro                      # hosts protect login form
-      - ./data/gate:/var/lib/dlehost/gate:ro             # its sessions (check only)
-    environment:
-      TZ: UTC # the session expiry is compared with %{TIME}; the form writes it in UTC
     depends_on: [php85, php74]
 
   php85:
@@ -58,7 +51,7 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME}-db
     restart: unless-stopped
     ports:
-      - "${BIND_ADDRESS:-0.0.0.0}:${DB_PORT:-3306}:3306"
+      - "${DB_BIND_ADDRESS:-127.0.0.1}:${DB_PORT:-3307}:3306"
     volumes:
       - ./data/mariadb:/var/lib/mysql         # database data
       - ./config/mariadb:/etc/mysql/conf.d:ro # configuration

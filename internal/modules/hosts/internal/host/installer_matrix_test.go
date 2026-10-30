@@ -12,11 +12,11 @@ import (
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/dist"
 )
 
-// DLEHOST_TEST_DISTS=/path/to/dists go test ./internal/modules/hosts/internal/host -run TestInstallerMatrix -v -timeout 20m
+// DLEPLUGIN_HOSTS_TEST_DISTS=/path/to/dists go test ./internal/modules/hosts/internal/host -run TestInstallerMatrix -v -timeout 20m
 func TestInstallerMatrix(t *testing.T) {
-	dir := os.Getenv("DLEHOST_TEST_DISTS")
+	dir := os.Getenv("DLEPLUGIN_HOSTS_TEST_DISTS")
 	if dir == "" {
-		t.Skip("set DLEHOST_TEST_DISTS to licensed clean distributions")
+		t.Skip("set DLEPLUGIN_HOSTS_TEST_DISTS to licensed clean distributions")
 	}
 	versions, err := dist.List(dir)
 	if err != nil {
@@ -28,7 +28,7 @@ func TestInstallerMatrix(t *testing.T) {
 		installed++
 		t.Run(version, func(t *testing.T) {
 			name := "v" + strings.ReplaceAll(version, ".", "-")
-			result, err := Add(s, AddOptions{Name: name, DLE: version, DefaultPHP: "8.5", PHPVersions: []string{"7.4", "8.5"},
+			result, err := Add(s, AddOptions{Name: name, DLE: version, DefaultPHP: "auto", PHPVersions: []string{"7.4", "8.5"},
 				DistsDir: dir, AdminPath: "control.php", Admin: Credentials{"owner", "matrix-test-password"}}, func(msg string) { t.Log(msg) })
 			if err != nil {
 				t.Fatal(err)
@@ -71,7 +71,7 @@ if (!$posts['n']) exit(5);
 			if err := s.Compose(strings.NewReader(check), "exec", "-T", "php"+strings.ReplaceAll(php, ".", ""), "php", "-d", "display_errors=stderr"); err != nil {
 				t.Fatal(err)
 			}
-			client := &gateClient{t: t, base: "http://127.0.0.1:" + s.HTTPPort(), http: &http.Client{Timeout: 20 * time.Second,
+			client := &testHTTPClient{t: t, base: "http://127.0.0.1:" + s.HTTPPort(), http: &http.Client{Timeout: 20 * time.Second,
 				CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 			for _, adminPath := range []string{"control-test.php", "admin.php"} {
 				previous, err := GetSetting(s, name, "admin_path")

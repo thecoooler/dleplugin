@@ -1,6 +1,48 @@
 package stack
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestSetDotEnvPreservesSecretsModeAndSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "settings")
+	if err := os.WriteFile(target, []byte("DB_ROOT_PASSWORD=secret\nHTTP_PORT=80\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, ".env")
+	if err := os.Symlink("settings", link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	s := &Stack{Dir: dir, Env: map[string]string{}}
+	if err := s.SetDotEnv("HTTP_PORT", "8080"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil || string(data) != "DB_ROOT_PASSWORD=secret\nHTTP_PORT=8080\n" {
+		t.Fatal("settings were not preserved", err)
+	}
+	info, err := os.Stat(target)
+	if err != nil || info.Mode().Perm() != 0o640 {
+		t.Fatal("file mode changed", err)
+	}
+	info, err = os.Lstat(link)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 || s.Env["HTTP_PORT"] != "8080" {
+		t.Fatal("symlink or in-memory value changed unexpectedly", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".env-update-") {
+			t.Fatal("temporary credentials file retained")
+		}
+	}
+}
 
 func TestUnquote(t *testing.T) {
 	for in, want := range map[string]string{

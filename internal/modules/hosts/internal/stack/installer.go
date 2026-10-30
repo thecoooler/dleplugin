@@ -20,7 +20,7 @@ import (
 // port, using the stack's PHP image and DB network. Apache never sees install.php.
 func (s *Stack) WithInstaller(ctx context.Context, staging, php string, run func(string) error) (err error) {
 	// A real static file avoids PHP's index.php fallback for nonexistent paths.
-	probe, err := os.CreateTemp(staging, "dlehost-ready-*.txt")
+	probe, err := os.CreateTemp(staging, "dleplugin-hosts-ready-*.txt")
 	if err != nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func (s *Stack) WithInstaller(ctx context.Context, staging, php string, run func
 	if _, err := rand.Read(token[:]); err != nil {
 		return err
 	}
-	name := "dlehost-install-" + hex.EncodeToString(token[:])
+	name := "dleplugin-hosts-install-" + hex.EncodeToString(token[:])
 	defer func() {
 		// Removed even when ctx is canceled.
 		res, stopErr := s.runner().Run(context.WithoutCancel(ctx), process.Command{Name: "docker", Args: []string{"rm", "-f", name}})

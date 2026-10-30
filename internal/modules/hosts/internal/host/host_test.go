@@ -14,8 +14,8 @@ import (
 func isolatedStack(t *testing.T) *stack.Stack {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("DLEHOST_DIR", dir)
-	t.Setenv("DLEHOST_HTTP_PORT", "8090")
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_HTTP_PORT", "8090")
 	bin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte("#!/bin/sh\n"+fakeInstallerPort+"cat >/dev/null\nexit 0\n"), 0755); err != nil {
 		t.Fatal(err)
@@ -80,6 +80,62 @@ func TestAddRejectsNonCleanArchive(t *testing.T) {
 		DistsDir: dists, Admin: Credentials{"admin", "test-password"}}, func(string) {})
 	if err == nil {
 		t.Fatal("accepted non-clean archive")
+	}
+}
+
+func TestAddPHPWarnings(t *testing.T) {
+	for _, tc := range []struct {
+		name, dle, requested, preferred string
+		want, absent                    []string
+	}{
+		{"automatic legacy", "11.0", "", "auto", []string{"PHP 7.4 is end-of-life"}, []string{"may not be compatible"}},
+		{"configured legacy", "11.0", "", "7.4", []string{"PHP 7.4 is end-of-life"}, nil},
+		{"manual legacy", "11.0", "7.4", "auto", []string{"PHP 7.4 is end-of-life"}, nil},
+		{"incompatible default", "11.0", "", "8.5", []string{"PHP 8.5 may not be compatible"}, []string{"PHP 7.4 is end-of-life"}},
+		{"incompatible manual", "11.0", "8.5", "auto", []string{"PHP 8.5 may not be compatible"}, []string{"PHP 7.4 is end-of-life"}},
+		{"below minimum", "21.0", "7.4", "auto", []string{"PHP 7.4 may not be compatible", "PHP 7.4 is end-of-life"}, nil},
+		{"explicit auto ignores preference", "11.0", "auto", "8.5", []string{"PHP 7.4 is end-of-life"}, []string{"may not be compatible"}},
+		{"modern", "21.0", "", "auto", nil, []string{"may not be compatible", "end-of-life"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := isolatedStack(t)
+			dirs := t.TempDir()
+			writeTestDist(t, dirs, tc.dle)
+			var warnings []string
+			_, err := Add(s, AddOptions{Name: "shop", DLE: tc.dle, DistsDir: dirs, PHP: tc.requested,
+				DefaultPHP: tc.preferred, Admin: Credentials{"admin", "password"}, Warn: func(msg string) { warnings = append(warnings, msg) }}, func(string) {})
+			// An empty PHPVersions stops before installation, after warning selection.
+			if err == nil || !strings.Contains(err.Error(), "not available") {
+				t.Fatalf("expected unavailable PHP error, got %v", err)
+			}
+			got := strings.Join(warnings, "\n")
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("warnings %q missing %q", got, want)
+				}
+			}
+			for _, absent := range tc.absent {
+				if strings.Contains(got, absent) {
+					t.Errorf("warnings %q unexpectedly contain %q", got, absent)
+				}
+			}
+		})
+	}
+}
+
+func TestAddKeepsConfiguredPHPBelowInstallerMinimum(t *testing.T) {
+	s := isolatedStack(t)
+	dirs := t.TempDir()
+	writeTestDist(t, dirs, "21.0")
+	var warnings []string
+	result, err := Add(s, AddOptions{Name: "shop", DLE: "21.0", DistsDir: dirs,
+		DefaultPHP: "7.4", PHPVersions: []string{"7.4", "8.5"}, Admin: Credentials{"admin", "password"},
+		Warn: func(msg string) { warnings = append(warnings, msg) }}, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Host.PHP != "7.4" || !strings.Contains(strings.Join(warnings, "\n"), "may not be compatible") {
+		t.Fatalf("PHP=%s warnings=%v", result.Host.PHP, warnings)
 	}
 }
 
@@ -217,5 +273,92 @@ func TestLegacyRegistryNotMigrated(t *testing.T) {
 	unmanaged := Host{Name: "localhost"}
 	if unmanaged.URL(s) != "http://localhost:8092/" {
 		t.Fatal("default host advertised externally")
+	}
+}
+
+func TestPortAppliesAllServicesAndRestoresOnFailure(t *testing.T) {
+	s := isolatedStack(t)
+	calls, fail := fakeDocker(t)
+	if err := SetHTTPPort(s, 8091, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	got := readTestFile(t, calls)
+	if !strings.Contains(got, "up -d ") || strings.Contains(got, "up -d apache") {
+		t.Fatalf("port change did not apply configuration to all services: %s", got)
+	}
+	if err := os.WriteFile(fail, []byte("up -d"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetHTTPPort(s, 8092, func(string) {}); err == nil {
+		t.Fatal("failed compose command reported success")
+	}
+	if s.HTTPPort() != "8091" {
+		t.Fatal("previous HTTP port was not restored")
+	}
+}
+
+func TestPortAppliesChangedDatabaseBinding(t *testing.T) {
+	s := isolatedStack(t)
+	bin := t.TempDir()
+	actual := filepath.Join(t.TempDir(), "database-binding")
+	if err := os.WriteFile(actual, []byte("0.0.0.0"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Model Compose: a service-specific up leaves the database untouched,
+	// while an unscoped up reconciles its published address with .env.
+	script := `#!/bin/sh
+case "$*" in
+  *"up -d apache"*) ;;
+  *"up -d"*) sed -n 's/^DB_BIND_ADDRESS=//p' "$TEST_STACK_DIR/.env" > "$TEST_DB_BINDING" ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TEST_STACK_DIR", s.Dir)
+	t.Setenv("TEST_DB_BINDING", actual)
+	if err := s.SetDotEnv("DB_BIND_ADDRESS", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetHTTPPort(s, 8093, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(readTestFile(t, actual)); got != "127.0.0.1" {
+		t.Fatalf("database binding was not reconciled: %s", got)
+	}
+}
+
+func TestBindAddressAppliesAllServicesAndRestoresOnFailure(t *testing.T) {
+	s := isolatedStack(t)
+	calls, fail := fakeDocker(t)
+	if err := SetBindAddress(s, "0.0.0.0", func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	if s.BindAddress() != "0.0.0.0" {
+		t.Fatal("bind address was not updated")
+	}
+	got := readTestFile(t, calls)
+	if !strings.Contains(got, "up -d ") || strings.Contains(got, "up -d apache") {
+		t.Fatalf("bind address change did not apply configuration to all services: %s", got)
+	}
+	if err := os.WriteFile(fail, []byte("up -d"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetBindAddress(s, "127.0.0.1", func(string) {}); err == nil {
+		t.Fatal("failed compose command reported success")
+	}
+	if s.BindAddress() != "0.0.0.0" {
+		t.Fatal("previous bind address was not restored")
+	}
+}
+
+func TestBindAddressValidatesIP(t *testing.T) {
+	s := isolatedStack(t)
+	if err := SetBindAddress(s, "invalid-ip", func(string) {}); err == nil {
+		t.Fatal("accepted invalid IP address")
+	}
+	if s.BindAddress() != "127.0.0.1" {
+		t.Fatal("bind address changed on validation error")
 	}
 }

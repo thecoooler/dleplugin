@@ -29,9 +29,9 @@ type Stack struct {
 }
 
 // Open deploys the embedded stack into dir and reads its .env. The directory
-// is DLEHOST_DIR, then dir, otherwise DefaultDir.
+// is DLEPLUGIN_HOSTS_DIR, then dir, otherwise DefaultDir.
 func Open(dir string) (*Stack, error) {
-	if env := os.Getenv("DLEHOST_DIR"); env != "" {
+	if env := os.Getenv("DLEPLUGIN_HOSTS_DIR"); env != "" {
 		dir = env
 	}
 	if dir == "" {
@@ -98,17 +98,8 @@ const ContainerWWWDir = "/var/www"
 
 func (s *Stack) HostDir(name string) string { return filepath.Join(s.WWWDir(), name) }
 
-// The protect login form and its sessions inside the apache and php containers.
-const (
-	ContainerGateApp = "/opt/dlehost/gate"
-	ContainerGateDir = "/var/lib/dlehost/gate"
-)
-
 // StagingDir is where files of new hosts are prepared outside www/.
 func (s *Stack) StagingDir() string { return filepath.Join(s.Dir, "data", "staging") }
-
-// GateDir is the login form session directory of a host (data/gate/<name>).
-func (s *Stack) GateDir(name string) string { return filepath.Join(s.Dir, "data", "gate", name) }
 
 // Domain returns the domain of a new managed host.
 func (s *Stack) Domain(name string) string {
@@ -215,28 +206,20 @@ func (s *Stack) ReloadApache() error {
 	return s.Compose(nil, "exec", "-T", "apache", "apache2ctl", "graceful")
 }
 
-// CheckGate checks as www-data that the running apache and php<ver> see the
-// login form and the session directory of host name, and that php can write
-// to it. Without hosts up after a binary update the mounts do not exist yet.
-func (s *Stack) CheckGate(phpVersion, name string) error {
-	dir := ContainerGateDir + "/" + name
-	checks := map[string]string{
-		"apache": "test -r " + ContainerGateApp + "/gate.php && test -x " + dir,
-		"php" + strings.ReplaceAll(phpVersion, ".", ""): "test -r " + ContainerGateApp + "/gate.php && test -r /opt/dlehost/protect/passwords.json && test -w " + dir + " && test -x " + dir,
-	}
-	for _, service := range []string{"apache", "php" + strings.ReplaceAll(phpVersion, ".", "")} {
-		if err := s.Compose(nil, "exec", "-T", "-u", "www-data", service, "sh", "-c", checks[service]); err != nil {
-			return fmt.Errorf("container %s does not see the login form or the session directory %s (run dleplugin hosts up; data/gate must be owned by the UID from .env): %w", service, dir, err)
-		}
-	}
-	return nil
-}
-
 // SetDotEnv changes (or adds) KEY=VALUE in .env, keeping the other lines.
 func (s *Stack) SetDotEnv(key, value string) error {
 	path := filepath.Join(s.Dir, ".env")
+	// Preserve an explicitly configured symlink while replacing its target.
+	path, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
 	data, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err != nil {
 		return err
 	}
 	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
@@ -250,7 +233,27 @@ func (s *Stack) SetDotEnv(key, value string) error {
 	if !found {
 		lines = append(lines, key+"="+value)
 	}
-	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(path), ".env-update-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if err := f.Chmod(info.Mode().Perm()); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.WriteString(strings.Join(lines, "\n") + "\n"); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(f.Name(), path); err != nil {
 		return err
 	}
 	s.Env[key] = value
@@ -263,4 +266,12 @@ func (s *Stack) HTTPPort() string {
 		return port
 	}
 	return "80" // default in docker-compose.yml
+}
+
+// BindAddress returns the Apache bind address from .env.
+func (s *Stack) BindAddress() string {
+	if addr := s.Env["BIND_ADDRESS"]; addr != "" {
+		return addr
+	}
+	return "127.0.0.1" // default in docker-compose.yml
 }

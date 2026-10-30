@@ -1,7 +1,9 @@
 package hosts
 
 import (
-	"io"
+	"encoding/hex"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +13,98 @@ import (
 
 	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/host"
 	config "github.com/thecoooler/dleplugin/internal/modules/hosts/internal/hostconfig"
+	"github.com/thecoooler/dleplugin/internal/modules/hosts/internal/stack"
 	"github.com/thecoooler/dleplugin/internal/modules/moduletest"
 )
+
+func TestUpReportsOccupiedPortBeforeCompose(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	port := fmt.Sprint(ln.Addr().(*net.TCPAddr).Port)
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", filepath.Join(t.TempDir(), "stack"))
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	t.Setenv("BIND_ADDRESS", "127.0.0.1")
+	t.Setenv("HTTP_PORT", port)
+	t.Setenv("DB_PORT", "3307")
+	t.Setenv("PATH", t.TempDir())
+	code, msg := run(t, "", "up")
+	if code == 0 || !strings.Contains(msg, "HTTP_PORT") || !strings.Contains(msg, port) || !strings.Contains(msg, "already in use") {
+		t.Fatalf("up: exit %d, %s", code, msg)
+	}
+}
+
+func TestGeneratedCredentialsStoredPrivately(t *testing.T) {
+	s := &stack.Stack{Dir: t.TempDir()}
+	path, err := saveGeneratedCredentials(s, "shop", host.Credentials{Login: "owner", Password: "test-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("credential file permissions: %v %v", info, err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "Host: \"shop\"\nLogin: owner\nPassword: test-secret\n" {
+		t.Fatal("credentials file contents incorrect", err)
+	}
+}
+
+func TestAdministratorPasswordDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("DLEPLUGIN_HOSTS_ADMIN_PASSWORD", "")
+	if err := os.Unsetenv("DLEPLUGIN_HOSTS_ADMIN_PASSWORD"); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &cobra.Command{}
+	cmd.Flags().String("admin-login", "admin", "")
+	cmd.Flags().String("admin-password", "", "")
+	first, generated, err := adminCredentials(cmd, "admin", "")
+	if err != nil || !generated {
+		t.Fatal("password was not generated", err)
+	}
+	decoded, err := hex.DecodeString(first.Password)
+	if err != nil || len(decoded) != 24 {
+		t.Fatal("generated password is not 24 random bytes")
+	}
+	second, _, err := adminCredentials(cmd, "admin", "")
+	if err != nil || first.Password == second.Password {
+		t.Fatal("administrator passwords are not independent", err)
+	}
+	t.Setenv("DLEPLUGIN_HOSTS_ADMIN_PASSWORD", "explicit-env")
+	c, generated, err := adminCredentials(cmd, "admin", "")
+	if err != nil || generated || c.Password != "explicit-env" {
+		t.Fatal("environment password was not honored", err)
+	}
+	if err := cmd.Flags().Set("admin-password", "explicit-flag"); err != nil {
+		t.Fatal(err)
+	}
+	c, generated, err = adminCredentials(cmd, "admin", "explicit-flag")
+	if err != nil || generated || c.Password != "explicit-flag" {
+		t.Fatal("flag password did not override environment", err)
+	}
+	if err := cmd.Flags().Set("admin-password", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := adminCredentials(cmd, "admin", ""); err == nil {
+		t.Fatal("explicit empty password accepted")
+	}
+}
+
+func TestFailedAddCleansGeneratedCredentials(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	e := moduletest.NewEnv(t, "", Module())
+	if code := e.Run("hosts", "add", "shop", "--dist", filepath.Join(t.TempDir(), "missing.zip")); code == 0 {
+		t.Fatal("missing archive accepted")
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "data", "credentials"))
+	if err != nil || len(entries) != 0 {
+		t.Fatal("credentials retained after failed add", err)
+	}
+}
 
 // run executes dleplugin hosts with args and stdin; it returns the exit code
 // and the error output.
@@ -24,7 +116,7 @@ func run(t *testing.T, stdin string, args ...string) (int, string) {
 }
 
 func TestHelp(t *testing.T) {
-	for _, sub := range []string{"", "up", "down", "compose", "list", "add", "remove", "protect", "get", "set", "path", "port", "versions", "config", "config set"} {
+	for _, sub := range []string{"", "up", "down", "compose", "list", "add", "remove", "get", "set", "path", "port", "bind", "versions", "config", "config set"} {
 		args := append(strings.Fields(sub), "--help")
 		if sub == "compose" {
 			continue // flags go to docker compose
@@ -42,7 +134,7 @@ func TestHelp(t *testing.T) {
 func TestCredentialPrecedence(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.Flags().String("admin-login", "admin", "")
-	const variable = "DLEHOST_TEST_ADMIN_LOGIN"
+	const variable = "DLEPLUGIN_HOSTS_TEST_ADMIN_LOGIN"
 	t.Setenv(variable, "owner")
 	if got := credentialValue(cmd, "admin-login", "admin", variable); got != "owner" {
 		t.Fatalf("environment: got %q", got)
@@ -63,8 +155,8 @@ func TestCredentialPrecedence(t *testing.T) {
 
 func TestHostSettingsCLI(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("DLEHOST_DIR", dir)
-	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
 	path := filepath.Join(dir, "www/shop/engine/data/config.php")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
@@ -98,8 +190,8 @@ func TestHostSettingsCLI(t *testing.T) {
 
 func TestHostSettingsArgumentsValidatedBeforeStack(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "stack")
-	t.Setenv("DLEHOST_DIR", dir)
-	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
 	for _, args := range [][]string{
 		{"get", "shop", "unknown"}, {"set", "shop", "unknown", "on"},
 		{"set", "shop", "admin_path", "../admin.php"}, {"set", "shop", "admin_path", ""},
@@ -117,7 +209,7 @@ func TestHostSettingsArgumentsValidatedBeforeStack(t *testing.T) {
 
 func TestOpenStackRouting(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "stack")
-	t.Setenv("DLEHOST_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
 	rt := moduletest.NewEnv(t, "", Module()).RT
 	cfg := &config.Config{BaseDomain: "dle.icooler.opik.net", ExternalOrigin: "https://other.test"}
 	if _, err := openStack(rt, cfg); err == nil {
@@ -139,84 +231,6 @@ func TestOpenStackRouting(t *testing.T) {
 	}
 }
 
-func TestProtectArgumentsValidatedBeforeStack(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "stack")
-	t.Setenv("DLEHOST_DIR", dir)
-	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
-	for _, args := range [][]string{{"protect", "shop"}, {"protect", "yes"}, {"protect", "shop", "maybe"}, {"add", "shop", "--protect", "yes"}, {"config", "set", "protect_session_ttl", "5x"}} {
-		if code, _ := run(t, "", args...); code == 0 {
-			t.Errorf("%v accepted", args)
-		}
-	}
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		t.Fatal("invalid arguments prepared the stack")
-	}
-}
-
-func TestProtectState(t *testing.T) {
-	for _, tc := range []struct {
-		protect string
-		global  bool
-		want    string
-	}{{"", false, "off (default)"}, {"", true, "on (default)"}, {"on", false, "on"}, {"off", true, "off"}} {
-		if got := protectState(host.Host{Protect: tc.protect}, tc.global); got != tc.want {
-			t.Errorf("%q/%v: %s", tc.protect, tc.global, got)
-		}
-	}
-}
-
-func TestReadProtectPassword(t *testing.T) {
-	for _, tc := range []struct {
-		in, want string
-		valid    bool
-	}{
-		{"secret\n", "secret", true}, {"secret\r\n", "secret", true}, {" secret ", " secret ", true},
-		{"pässwörd\n", "pässwörd", true}, {strings.Repeat("a", 72) + "\r\n", strings.Repeat("a", 72), true},
-		{"", "", false}, {"\n", "", false}, {"a\nb\n", "", false}, {"a\x00b", "", false}, {strings.Repeat("a", 73), "", false},
-	} {
-		got, err := readProtectPassword(strings.NewReader(tc.in), io.Discard)
-		if (err == nil) != tc.valid || tc.valid && string(got) != tc.want {
-			t.Errorf("input length %d: valid %v, got length %d, error %v", len(tc.in), tc.valid, len(got), err)
-		}
-	}
-}
-
-func TestProtectPasswordCLI(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("DLEHOST_DIR", dir)
-	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
-	cli := func(args ...string) (int, string) { return run(t, "cli-secret\n", args...) }
-	if code, out := cli("protect", "on"); code == 0 || !strings.Contains(out, "no global password") {
-		t.Fatalf("enable without password: %d %s", code, out)
-	}
-	if code, _ := cli("protect", "password", "--default"); code == 0 {
-		t.Fatal("accepted global --default")
-	}
-	if code, _ := cli("protect", "password", "cli-secret"); code == 0 {
-		t.Fatal("accepted positional password")
-	}
-	if code, out := cli("protect", "password"); code != 0 {
-		t.Fatal(out)
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "data", "protect", "passwords.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), "cli-secret") || !strings.Contains(string(data), "$2a$10$") {
-		t.Fatal("CLI did not store only bcrypt hash")
-	}
-	if code, out := cli("protect", "on"); code != 0 {
-		t.Fatal(out)
-	}
-	cfg, err := config.Load()
-	if err != nil || !cfg.Protect {
-		t.Fatal("global protect not persisted")
-	}
-	if code, out := cli("protect"); code != 0 {
-		t.Fatal(out)
-	}
-}
-
 func TestComposePassthrough(t *testing.T) {
 	bin := t.TempDir()
 	script := "#!/bin/sh\nshift 5\nprintf '%s\\n' \"$@\"\nexit 3\n" // drops compose --project-directory DIR -f FILE
@@ -224,8 +238,8 @@ func TestComposePassthrough(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("DLEHOST_DIR", filepath.Join(t.TempDir(), "stack"))
-	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", filepath.Join(t.TempDir(), "stack"))
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
 	for _, tc := range []struct {
 		args    []string
 		want    string
@@ -253,8 +267,8 @@ func TestComposePassthrough(t *testing.T) {
 }
 
 func TestDefaultAdminPathCLI(t *testing.T) {
-	t.Setenv("DLEHOST_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
-	t.Setenv("DLEHOST_DIR", filepath.Join(t.TempDir(), "unused-stack"))
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", filepath.Join(t.TempDir(), "unused-stack"))
 	for _, args := range [][]string{
 		{"config", "get", "default_admin_path"},
 		{"config", "set", "default_admin_path", "control.php"},
@@ -272,5 +286,53 @@ func TestDefaultAdminPathCLI(t *testing.T) {
 				t.Fatalf("get default: %s %v", e.Out.String(), err)
 			}
 		}
+	}
+}
+
+func TestBindCLI(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "stack")
+	t.Setenv("DLEPLUGIN_HOSTS_DIR", dir)
+	t.Setenv("DLEPLUGIN_HOSTS_CONFIG", filepath.Join(t.TempDir(), "config.yml"))
+	bin := t.TempDir()
+	script := "#!/bin/sh\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	// Default read
+	e := moduletest.NewEnv(t, "", Module())
+	if code := e.Run("hosts", "bind"); code != 0 || strings.TrimSpace(e.Out.String()) != "127.0.0.1" {
+		t.Fatalf("bind get default: code=%d, out=%s, err=%s", code, e.Out.String(), e.ErrB.String())
+	}
+
+	// Change via bind
+	e = moduletest.NewEnv(t, "", Module())
+	if code := e.Run("hosts", "bind", "0.0.0.0"); code != 0 || !strings.Contains(e.Out.String(), "0.0.0.0") {
+		t.Fatalf("bind set: code=%d, out=%s, err=%s", code, e.Out.String(), e.ErrB.String())
+	}
+
+	// Check updated
+	e = moduletest.NewEnv(t, "", Module())
+	if code := e.Run("hosts", "bind"); code != 0 || strings.TrimSpace(e.Out.String()) != "0.0.0.0" {
+		t.Fatalf("bind get updated: code=%d, out=%s, err=%s", code, e.Out.String(), e.ErrB.String())
+	}
+
+	// Change via alias host
+	e = moduletest.NewEnv(t, "", Module())
+	if code := e.Run("hosts", "host", "127.0.0.1"); code != 0 || !strings.Contains(e.Out.String(), "127.0.0.1") {
+		t.Fatalf("host alias set: code=%d, out=%s, err=%s", code, e.Out.String(), e.ErrB.String())
+	}
+
+	// Check updated
+	e = moduletest.NewEnv(t, "", Module())
+	if code := e.Run("hosts", "host"); code != 0 || strings.TrimSpace(e.Out.String()) != "127.0.0.1" {
+		t.Fatalf("host alias get: code=%d, out=%s, err=%s", code, e.Out.String(), e.ErrB.String())
+	}
+
+	// Invalid IP
+	e = moduletest.NewEnv(t, "", Module())
+	if code := e.Run("hosts", "bind", "not-an-ip"); code == 0 {
+		t.Fatal("accepted invalid IP")
 	}
 }

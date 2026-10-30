@@ -15,15 +15,15 @@ import (
 )
 
 // Opt in with an isolated Apache binary; no Docker daemon or system config is used.
-// DLEHOST_TEST_APACHE_MODULES points to its modules directory.
+// DLEPLUGIN_HOSTS_TEST_APACHE_MODULES points to its modules directory.
 func TestApacheUnknownHost(t *testing.T) {
-	binary := os.Getenv("DLEHOST_TEST_APACHE")
+	binary := os.Getenv("DLEPLUGIN_HOSTS_TEST_APACHE")
 	if binary == "" {
-		t.Skip("set DLEHOST_TEST_APACHE to run the isolated Apache HTTP regression")
+		t.Skip("set DLEPLUGIN_HOSTS_TEST_APACHE to run the isolated Apache HTTP regression")
 	}
-	modules := os.Getenv("DLEHOST_TEST_APACHE_MODULES")
+	modules := os.Getenv("DLEPLUGIN_HOSTS_TEST_APACHE_MODULES")
 	if modules == "" {
-		t.Fatal("DLEHOST_TEST_APACHE_MODULES is required")
+		t.Fatal("DLEPLUGIN_HOSTS_TEST_APACHE_MODULES is required")
 	}
 	dir := t.TempDir()
 	if _, err := ensure(dir); err != nil {

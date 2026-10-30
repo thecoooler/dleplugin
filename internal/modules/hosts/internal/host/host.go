@@ -4,11 +4,10 @@ package host
 import (
 	"archive/zip"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,8 +24,6 @@ import (
 
 // Host is a host registry entry (data/hosts.json in the stack directory).
 type Host struct {
-	gateKey string // fingerprint of the effective hash, only for vhost generation
-
 	Name           string    `json:"name"`
 	DomainName     string    `json:"domain,omitempty"`
 	ExternalOrigin string    `json:"external_origin,omitempty"`
@@ -34,8 +31,6 @@ type Host struct {
 	PHP            string    `json:"php"`
 	Database       string    `json:"database"`
 	CreatedAt      time.Time `json:"created_at"`
-	// Protect is the login form mode: "" (default, follows the global setting), on, off.
-	Protect string `json:"protect,omitempty"`
 }
 
 func (h Host) Domain() string {
@@ -94,10 +89,6 @@ func loadRegistry(s *stack.Stack) (map[string]Host, error) {
 		return nil, fmt.Errorf("%s: %w", s.RegistryPath(), err)
 	}
 	for _, h := range list {
-		// An unknown mode must not silently become default: protection could turn off.
-		if _, err := ParseProtect(h.Protect); err != nil || h.Protect == ProtectDefault {
-			return nil, fmt.Errorf("%s: host %s: invalid protect %q (on, off or no field)", s.RegistryPath(), h.Name, h.Protect)
-		}
 		hosts[h.Name] = h
 	}
 	return hosts, nil
@@ -181,11 +172,8 @@ func vhostPath(s *stack.Stack, name string) string {
 	return filepath.Join(s.SitesDir(), "60-host-"+name+".conf")
 }
 
-// An explicit vhost with a fixed PHP version. 60-* files are included before
-// 90-auto.conf, so the domain is served by the chosen version. protected
-// puts the login form in front of the host, including its auto host addresses;
-// ttl is the form session lifetime (0 means no server-side expiry).
-func vhostConfig(h Host, protected bool, ttl time.Duration) string {
+// An explicit vhost with a fixed PHP version, included before the auto hosts.
+func vhostConfig(h Host) string {
 	ver := strings.ReplaceAll(h.PHP, ".", "")
 	forwarded := ""
 	if strings.HasPrefix(h.ExternalOrigin, "https://") {
@@ -194,19 +182,15 @@ func vhostConfig(h Host, protected bool, ttl time.Duration) string {
     ProxyFCGISetEnvIf "req('X-Forwarded-Proto') == 'https'" REQUEST_SCHEME "https"
 `
 	}
-	aliases, gate := "", ""
-	if protected {
-		aliases, gate = gateAliases(h), gateConfig(h, ttl)
-	}
 	return fmt.Sprintf(`# Created by dleplugin hosts; do not edit by hand (DLE %s, PHP %s)
 <VirtualHost *:80>
     ServerName %s
-%s    DocumentRoot %s/%s
+    DocumentRoot %s/%s
     Use PHP %s
-%s%s    ErrorLog  ${APACHE_LOG_DIR}/%s-error.log
+%s    ErrorLog  ${APACHE_LOG_DIR}/%s-error.log
     CustomLog ${APACHE_LOG_DIR}/%s-access.log combined
 </VirtualHost>
-`, h.DLE, h.PHP, h.Domain(), aliases, stack.ContainerWWWDir, h.Name, ver, forwarded, gate, h.Name, h.Name)
+`, h.DLE, h.PHP, h.Domain(), stack.ContainerWWWDir, h.Name, ver, forwarded, h.Name, h.Name)
 }
 
 // AddOptions are the parameters of a new host.
@@ -216,14 +200,13 @@ type AddOptions struct {
 	DLE         string
 	DistArchive string // direct path to a DLE distribution ZIP
 	PHP         string
-	DefaultPHP  string   // config preference; used only when compatible with DLE
+	DefaultPHP  string   // configured default or auto
 	PHPVersions []string // allowed PHP versions
 	DistsDir    string
 	Admin       Credentials
-	AdminPath   string          // desired administrator filename; empty keeps the distribution default
-	SiteOffline string          // on (default, closed) or off (open)
-	Protect     string          // default, on or off
-	Settings    ProtectSettings // global login form settings
+	AdminPath   string       // desired administrator filename; empty keeps the distribution default
+	SiteOffline string       // on (default, closed) or off (open)
+	Warn        func(string) // optional warnings before installation
 }
 
 // AddResult is the created host and its address.
@@ -252,17 +235,6 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 	}
 	if err := ValidateSetting("site_offline", offline); err != nil {
 		return nil, err
-	}
-	protect, err := ParseProtect(opts.Protect)
-	if err != nil {
-		return nil, err
-	}
-	passwords, err := loadPasswords(s)
-	if err != nil {
-		return nil, err
-	}
-	if (Host{Protect: protect}).Protected(opts.Settings.Global) && passwords.effective(name) == "" {
-		return nil, missingPassword(name)
 	}
 	hosts, err := loadRegistry(s)
 	if err != nil {
@@ -306,13 +278,19 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 	dleVersion = distInfo.Version
 
 	phpVersion = selectPHP(dleVersion, phpVersion, opts.DefaultPHP)
+	warn := opts.Warn
+	if warn == nil {
+		warn = func(string) {}
+	}
+	if !compatiblePHP(dleVersion, phpVersion) {
+		warn(fmt.Sprintf("PHP %s may not be compatible with DLE %s", phpVersion, dleVersion))
+	}
+	if phpVersion == "7.4" {
+		warn("PHP 7.4 is end-of-life and vulnerable to CVE-2026-109618 and CVE-2026-109619; do not expose this stack to untrusted networks")
+	}
 	if !slices.Contains(opts.PHPVersions, phpVersion) {
 		return nil, fmt.Errorf("PHP version %s is not available, allowed: %s", phpVersion, strings.Join(opts.PHPVersions, ", "))
 	}
-	if dist.VersionLess(phpVersion, minimumInstallerPHP(dleVersion)) {
-		return nil, fmt.Errorf("a clean install of DLE %s requires PHP >= %s", dleVersion, minimumInstallerPHP(dleVersion))
-	}
-
 	h := Host{
 		Name:       name,
 		DomainName: s.Domain(name),
@@ -320,14 +298,11 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 		PHP:        phpVersion,
 		Database:   "dle_" + strings.ReplaceAll(name, "-", "_"),
 		CreatedAt:  time.Now(),
-		Protect:    protect,
 	}
-	protected := h.Protected(opts.Settings.Global)
-	h.gateKey = passwordKey(passwords.effective(name))
 	if s.ExternalOrigin != "" {
 		h.ExternalOrigin = strings.TrimSuffix(s.HostURL(h.Domain()), "/")
 	}
-	password, err := randomHex(16)
+	password, err := stack.NewPassword()
 	if err != nil {
 		return nil, err
 	}
@@ -340,24 +315,7 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 		return nil, err
 	}
 
-	if protected {
-		log("login form session directory")
-		rollback = append(rollback, func() { os.RemoveAll(s.GateDir(name)) })
-		// Sessions of a previously removed host with the same name must not work for the new one.
-		if err := os.RemoveAll(s.GateDir(name)); err != nil {
-			return fail(err)
-		}
-		if err := ensureGateDir(s, name); err != nil {
-			return fail(err)
-		}
-		if err := s.CheckGate(phpVersion, name); err != nil {
-			return fail(err)
-		}
-	}
-
-	// Files are prepared outside www/ and published by renaming only after the
-	// vhost exists: otherwise the directory would be served by the
-	// <name>.localhost auto host without the login form.
+	// Prepare files outside www/ and publish them after the vhost is ready.
 	if err := os.MkdirAll(s.StagingDir(), 0o700); err != nil {
 		return fail(err)
 	}
@@ -416,14 +374,11 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 
 	log("vhost apache, PHP " + phpVersion)
 	vhost := vhostPath(s, name)
-	if protected {
-		log("login form: on")
-	}
-	if err := os.WriteFile(vhost, []byte(vhostConfig(h, protected, opts.Settings.SessionTTL)), 0o644); err != nil {
+	if err := os.WriteFile(vhost, []byte(vhostConfig(h)), 0o644); err != nil {
 		return fail(err)
 	}
 	rollback = append(rollback, func() {
-		// The vhost protects the published files until they are removed.
+		// Keep the vhost until published files are removed.
 		if _, err := os.Stat(hostDir); err == nil {
 			return
 		}
@@ -449,10 +404,7 @@ func Add(s *stack.Stack, opts AddOptions, log func(string)) (*AddResult, error) 
 }
 
 // Remove removes a host created by hosts add: database, files and vhost.
-// The vhost goes last: while the host files exist, its vhost (and the login
-// form, when enabled) also serves the auto host addresses, so a failure to
-// remove the database or files does not leave the host open. Running
-// remove again continues from the failed step.
+// Running remove again continues from the failed step.
 func Remove(s *stack.Stack, name string, log func(string)) error {
 	hosts, err := loadRegistry(s)
 	if err != nil {
@@ -481,19 +433,6 @@ func Remove(s *stack.Stack, name string, log func(string)) error {
 		return err
 	}
 
-	if err := clearSessions(s, name, false); err != nil {
-		log("could not remove the login form sessions: " + err.Error())
-	}
-	passwords, err := loadPasswords(s)
-	if err != nil {
-		return err
-	}
-	if _, own := passwords.Hosts[name]; own {
-		delete(passwords.Hosts, name)
-		if err := savePasswords(s, passwords); err != nil {
-			return err
-		}
-	}
 	delete(hosts, name)
 	return saveRegistry(s, hosts)
 }
@@ -538,14 +477,6 @@ func replaceInFile(path string, fn func(string) string) error {
 	return os.WriteFile(path, []byte(fn(string(data))), 0o644)
 }
 
-func randomHex(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
 // SetHTTPPort switches the Apache port of the whole stack and updates
 // http_home_url of the hosts without an external origin.
 func SetHTTPPort(s *stack.Stack, port int, log func(string)) error {
@@ -562,10 +493,12 @@ func SetHTTPPort(s *stack.Stack, port int, log func(string)) error {
 	if err := s.SetDotEnv("HTTP_PORT", strconv.Itoa(port)); err != nil {
 		return err
 	}
-	log("recreating apache")
-	if err := s.Compose(nil, "up", "-d", "apache"); err != nil {
-		s.SetDotEnv("HTTP_PORT", prev)
-		if rerr := s.Compose(nil, "up", "-d", "apache"); rerr != nil {
+	log("applying stack configuration")
+	if err := s.Compose(nil, "up", "-d"); err != nil {
+		if rerr := s.SetDotEnv("HTTP_PORT", prev); rerr != nil {
+			return fmt.Errorf("%w; restoring port %s in .env failed: %v", err, prev, rerr)
+		}
+		if rerr := s.Compose(nil, "up", "-d"); rerr != nil {
 			return fmt.Errorf("%w; restoring port %s failed too: %v", err, prev, rerr)
 		}
 		return fmt.Errorf("%w (port restored to %s)", err, prev)
@@ -598,6 +531,32 @@ func clearPageCache(hostDir string) error {
 		if err := os.Remove(f); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// SetBindAddress switches the Apache bind address of the whole stack.
+func SetBindAddress(s *stack.Stack, address string, log func(string)) error {
+	ip := net.ParseIP(address)
+	if ip == nil {
+		return fmt.Errorf("invalid address %q: expected an IP address (e.g. 127.0.0.1 or 0.0.0.0)", address)
+	}
+	norm := ip.String()
+	prev := s.BindAddress()
+
+	log("BIND_ADDRESS=" + norm + " in .env")
+	if err := s.SetDotEnv("BIND_ADDRESS", norm); err != nil {
+		return err
+	}
+	log("applying stack configuration")
+	if err := s.Compose(nil, "up", "-d"); err != nil {
+		if rerr := s.SetDotEnv("BIND_ADDRESS", prev); rerr != nil {
+			return fmt.Errorf("%w; restoring bind address %s in .env failed: %v", err, prev, rerr)
+		}
+		if rerr := s.Compose(nil, "up", "-d"); rerr != nil {
+			return fmt.Errorf("%w; restoring bind address %s failed too: %v", err, prev, rerr)
+		}
+		return fmt.Errorf("%w (bind address restored to %s)", err, prev)
 	}
 	return nil
 }
