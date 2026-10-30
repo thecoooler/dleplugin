@@ -66,7 +66,7 @@ func TestHelp(t *testing.T) {
 	if code := e.run("test", "--help"); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	for _, s := range []string{"test [FILES...]", "--filter", "--update-snapshots", "--coverage-min", "--coverage-html", "--refresh-dle", "DLE trial"} {
+	for _, s := range []string{"test [FILES...]", "--filter", "--update-snapshots", "--coverage-min", "--coverage-html", "--refresh-dle", "--keep-run", "DLE trial"} {
 		if !strings.Contains(e.out.String(), s) {
 			t.Errorf("help lacks %q", s)
 		}

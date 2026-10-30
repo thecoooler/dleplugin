@@ -70,6 +70,8 @@ type Options struct {
 	TrialURL string
 	// Refresh downloads and installs the trial again.
 	Refresh bool
+	// KeepRun keeps the run site after the run for debugging.
+	KeepRun bool
 	// StreamBuild shows docker build output.
 	StreamBuild bool
 	// Notify receives progress messages; may be nil.
@@ -110,6 +112,17 @@ func Run(ctx context.Context, runner *process.Runner, o Options) (int, error) {
 	site, err := newRunSite(base, o.Plugin)
 	if err != nil {
 		return 0, err
+	}
+	if o.KeepRun {
+		o.notify("Keeping run site " + site)
+	} else {
+		// Registered before the environment cleanup below, so containers
+		// finish with the site before it is removed.
+		defer func() {
+			if err := os.RemoveAll(site); err != nil {
+				o.notify("Could not remove run site " + site + ": " + err.Error())
+			}
+		}()
 	}
 
 	e, err := startEnv(ctx, runner)
@@ -284,7 +297,67 @@ func prepareBase(ctx context.Context, runner *process.Runner, image string, o *O
 	if v := Version(site); v != "" {
 		o.notify("DLE " + v + " installed.")
 	}
+	if removed, err := pruneBases(root, base, keepBases); err != nil {
+		o.notify("Could not remove old DLE installations: " + err.Error())
+	} else {
+		for _, p := range removed {
+			o.notify("Removed old DLE installation " + filepath.Base(p) + ".")
+		}
+	}
 	return base, nil
+}
+
+// keepBases is the number of installed DLE bases kept after a new one is
+// installed: the current one and the previous release.
+const keepBases = 2
+
+// pruneBases removes DLE bases other than current, keeping the keep-1 most
+// recent ones. The returned paths were removed.
+func pruneBases(root, current string, keep int) ([]string, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	type base struct {
+		path string
+		mod  time.Time
+	}
+	var others []base
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), "dle-") {
+			continue
+		}
+		p := filepath.Join(root, e.Name())
+		if p == current {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		others = append(others, base{path: p, mod: info.ModTime()})
+	}
+	sort.SliceStable(others, func(i, j int) bool { return others[i].mod.After(others[j].mod) })
+	keepOther := keep - 1 // current counts towards keep
+	if keepOther < 0 {
+		keepOther = 0
+	}
+	var removed []string
+	var errs []error
+	for i, b := range others {
+		if i < keepOther {
+			continue
+		}
+		if err := os.RemoveAll(b.path); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		removed = append(removed, b.path)
+	}
+	return removed, errors.Join(errs...)
 }
 
 // installBase runs the installer with PHP's built-in server and saves the

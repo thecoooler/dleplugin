@@ -136,6 +136,7 @@ func Ensure(ctx context.Context, runner *process.Runner, img Image, stream bool,
 	tag := img.Tag()
 	_, err := runner.Run(ctx, process.Command{Name: "docker", Args: []string{"image", "inspect", tag}})
 	if err == nil {
+		prune(ctx, runner, img, notify)
 		return tag, nil
 	}
 	var ee *process.ExitError
@@ -143,6 +144,9 @@ func Ensure(ctx context.Context, runner *process.Runner, img Image, stream bool,
 		return "", err
 	}
 	if pulled, err := pull(ctx, runner, img, stream, notify); err != nil || pulled {
+		if pulled {
+			prune(ctx, runner, img, notify)
+		}
 		return tag, err
 	}
 
@@ -164,7 +168,14 @@ func Ensure(ctx context.Context, runner *process.Runner, img Image, stream bool,
 		return "", err
 	}
 	notify(capitalize(img.Title) + " image built successfully.")
+	prune(ctx, runner, img, notify)
 	return tag, nil
+}
+
+// prune removes older tags once the current image is available. Cleanup is
+// best effort: a failed prune must not fail the run that needed the image.
+func prune(ctx context.Context, runner *process.Runner, img Image, notify func(string)) {
+	_, _ = Prune(ctx, runner, img, KeepTags, notify)
 }
 
 // pull fetches the prebuilt image and tags it locally. It reports false when

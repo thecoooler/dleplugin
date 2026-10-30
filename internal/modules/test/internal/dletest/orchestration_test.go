@@ -2,6 +2,8 @@ package dletest
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -393,9 +396,11 @@ func TestRunDownloadsInstallsAndReusesBase(t *testing.T) {
 	if site == "" {
 		t.Fatal("missing site mount")
 	}
+	if _, err := os.Stat(site); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("run site remains after a successful run: %v", err)
+	}
 	write(t, filepath.Join(site, "stale.txt"), "stale")
 	write(t, filepath.Join(site, "index.php"), "mutated")
-	write(t, filepath.Join(site, "dump.sql"), "should disappear")
 	installer.mu.Lock()
 	steps := len(installer.steps)
 	installer.mu.Unlock()
@@ -412,11 +417,8 @@ func TestRunDownloadsInstallsAndReusesBase(t *testing.T) {
 	if steps != after {
 		t.Error("cached base was reinstalled")
 	}
-	if _, err := os.Stat(filepath.Join(site, "stale.txt")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("stale run file: %v", err)
-	}
-	if got, _ := os.ReadFile(filepath.Join(site, "index.php")); string(got) != "<?php // index" {
-		t.Errorf("run not reset: %s", got)
+	if _, err := os.Stat(site); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("run site remains after a failed Pest run: %v", err)
 	}
 	if !reflect.DeepEqual(registry.names, []string{"dependency", "subject", "dependency", "subject"}) || *closed != 2 {
 		t.Errorf("connections = %v, closed %d", registry.names, *closed)
@@ -457,6 +459,13 @@ func TestRunSetupFailuresCleanUp(t *testing.T) {
 			cmds := f.commands(t)
 			requireArgs(t, cmds[len(cmds)-2], "rm", "--force", "--volumes")
 			requireArgs(t, cmds[len(cmds)-1], "network", "rm")
+			root, err := CacheRoot()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if runDirs, err := filepath.Glob(filepath.Join(root, "run", "*")); err != nil || len(runDirs) != 0 {
+				t.Errorf("run sites remain after setup failure: %q, %v", runDirs, err)
+			}
 		})
 	}
 }
@@ -527,5 +536,92 @@ func TestConnectPluginsOpenFailure(t *testing.T) {
 	openRegistry = func(dle.DBConfig) (dle.Registry, func(), error) { return nil, nil, cause }
 	if err := connectPlugins(context.Background(), t.TempDir(), "unused", nil); !errors.Is(err, cause) {
 		t.Errorf("registry error = %v", err)
+	}
+}
+
+func TestPruneBases(t *testing.T) {
+	root := t.TempDir()
+	current := filepath.Join(root, "dle-current")
+	for _, name := range []string{"dle-old", "dle-previous", "dle-current", "other"} {
+		write(t, filepath.Join(root, name, ".ready"), "21.0\n")
+	}
+	now := time.Now()
+	for name, age := range map[string]time.Duration{"dle-old": 3 * time.Hour, "dle-previous": time.Hour, "dle-current": 2 * time.Hour} {
+		p := filepath.Join(root, name)
+		if err := os.Chtimes(p, now.Add(-age), now.Add(-age)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed, err := pruneBases(root, current, keepBases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{filepath.Join(root, "dle-old")}; !reflect.DeepEqual(removed, want) {
+		t.Errorf("removed = %q, want %q", removed, want)
+	}
+	for _, name := range []string{"dle-previous", "dle-current", "other"} {
+		if _, err := os.Stat(filepath.Join(root, name)); err != nil {
+			t.Errorf("%s removed: %v", name, err)
+		}
+	}
+	removed, err = pruneBases(root, current, 1)
+	if err != nil || !reflect.DeepEqual(removed, []string{filepath.Join(root, "dle-previous")}) {
+		t.Errorf("keep=1 removed = %q, %v", removed, err)
+	}
+	if removed, err := pruneBases(t.TempDir(), current, keepBases); err != nil || len(removed) != 0 {
+		t.Errorf("missing root: %q, %v", removed, err)
+	}
+}
+
+func TestNewRunSiteReplacesExisting(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	base := t.TempDir()
+	write(t, filepath.Join(base, "site", "index.php"), "fresh")
+	p := loadPlugin(t, filepath.Join(t.TempDir(), "Plugin"), "Plugin")
+	site, err := newRunSite(base, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(site, "index.php")); err != nil || string(b) != "fresh" {
+		t.Fatalf("site = %q, %v", b, err)
+	}
+	write(t, filepath.Join(site, "stale.txt"), "stale")
+	again, err := newRunSite(base, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != site {
+		t.Errorf("site path changed: %q -> %q", site, again)
+	}
+	if _, err := os.Stat(filepath.Join(site, "stale.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("stale file survives: %v", err)
+	}
+}
+
+func TestRunKeepsRunSite(t *testing.T) {
+	f := fakeOrchestrationDocker(t)
+	url, _, _ := trialServer(t)
+	injectRegistry(t, &recordingRegistry{})
+	p := orchestrationPlugin(t, t.TempDir(), "subject")
+	write(t, filepath.Join(p.Root(), "tests", "Test.php"), "<?php")
+	var messages []string
+	o := Options{Plugin: p, TrialURL: url, KeepRun: true, Notify: func(s string) { messages = append(messages, s) }}
+	if code, err := Run(context.Background(), f.runner, o); err != nil || code != 0 {
+		t.Fatalf("Run = %d, %v", code, err)
+	}
+	root, err := CacheRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := md5.Sum([]byte(p.Root()))
+	site := filepath.Join(root, "run", p.Slug()+"-"+hex.EncodeToString(sum[:])[:6])
+	if _, err := os.Stat(filepath.Join(site, "index.php")); err != nil {
+		t.Fatalf("run site kept: %v", err)
+	}
+	if !slices.Contains(messages, "Keeping run site "+site) {
+		t.Errorf("messages = %q", messages)
+	}
+	if err := os.RemoveAll(site); err != nil {
+		t.Fatal(err)
 	}
 }
