@@ -42,7 +42,8 @@ func TestHelpOrder(t *testing.T) {
 		"Build and deploy:", "build", "diff", "deploy",
 		"DLE hosts:", "hosts",
 		"AI agents:", "skills",
-		"Additional Commands:", "cache", "help",
+		"Maintenance:", "cache",
+		"Additional Commands:", "help",
 		"Flags:",
 	}
 	if strings.Join(got, ",") != strings.Join(want, ",") {

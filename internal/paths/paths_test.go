@@ -36,6 +36,17 @@ func TestComposerCacheDirUsesXDG(t *testing.T) {
 	}
 }
 
+func TestCacheRootUsesXDG(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", "/tmp/xdg")
+	got, err := CacheRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join("/tmp/xdg", "dleplugin"); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
 func TestCacheRootDarwin(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", "")
 	t.Setenv("HOME", "/home/test")

@@ -3,6 +3,7 @@ package cache_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,8 @@ func layout(t *testing.T, root string) {
 	write(t, filepath.Join(root, "test", "run", "demo-abc", "index.php"), strings.Repeat("r", 10))
 	write(t, filepath.Join(root, "test", "dle-current", "site", "index.php"), "current")
 	write(t, filepath.Join(root, "test", "dle-old", "site", "index.php"), strings.Repeat("o", 20))
+	write(t, filepath.Join(root, "test", "dle-current", ".ready"), "21.0\n")
+	write(t, filepath.Join(root, "test", "dle-old", ".ready"), "20.0\n")
 	write(t, filepath.Join(root, "static", "Demo-abc", "phpstan.neon"), strings.Repeat("s", 30))
 	now := time.Now()
 	for path, mod := range map[string]time.Time{
@@ -166,10 +169,46 @@ func TestCleanAllAndOlderThan(t *testing.T) {
 		t.Errorf("older-than kept an old base:\n%s", e.Out)
 	}
 
-	e.Out.Reset()
-	e.ErrB.Reset()
-	if code := e.Run("cache", "clean", "--older-than", "nonsense"); code != 1 || !strings.Contains(e.ErrB.String(), "Invalid --older-than duration") {
-		t.Errorf("invalid duration: exit %d, err %q", code, e.ErrB)
+	for _, value := range []string{"nonsense", "0s", "-1h"} {
+		e.Out.Reset()
+		e.ErrB.Reset()
+		if code := e.Run("cache", "clean", "--older-than", value); code != 1 || !strings.Contains(e.ErrB.String(), "Invalid --older-than duration") {
+			t.Errorf("invalid duration %q: exit %d, err %q", value, code, e.ErrB)
+		}
+	}
+}
+
+func TestCleanReportsErrors(t *testing.T) {
+	e, root := newEnv(t)
+	// A file where the run-site directory belongs makes the read fail.
+	write(t, filepath.Join(root, "test", "run"), "not a directory")
+	if code := e.Run("cache", "clean"); code != 1 {
+		t.Fatalf("exit %d: %s", code, e.ErrB)
+	}
+	if strings.Contains(e.Out.String(), "Cache is clean.") || !strings.Contains(e.Out.String(), "Nothing was removed.") {
+		t.Errorf("out = %q", e.Out)
+	}
+	if !strings.Contains(e.ErrB.String(), "read ") {
+		t.Errorf("err = %q", e.ErrB)
+	}
+	e.NoConfig(t)
+}
+
+func TestCleanFatalError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("HOME resolution differs on Windows")
+	}
+	e, _ := newEnv(t)
+	t.Setenv("XDG_CACHE_HOME", "")
+	t.Setenv("HOME", "")
+	if code := e.Run("cache", "clean"); code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	if e.Out.Len() != 0 || strings.Contains(e.Out.String(), "Cache is clean.") {
+		t.Errorf("out = %q", e.Out)
+	}
+	if !strings.Contains(e.ErrB.String(), "$HOME is not defined") {
+		t.Errorf("err = %q", e.ErrB)
 	}
 }
 

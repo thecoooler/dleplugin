@@ -24,6 +24,7 @@ func TestEnsure(t *testing.T) {
 	inspect := "image inspect " + img.Tag()
 	list := "image ls --format " + tagsFormat
 	pull, tag, build := "pull "+remote, "tag "+remote+" "+img.Tag(), "build --tag "+img.Tag()+" -"
+	untag := "image rm " + remote
 	pulling := "Pulling test image " + remote + "..."
 	fallback := "Could not pull " + remote + " (pull denied); building it locally."
 	building := "Building test image " + img.Tag() + "..."
@@ -34,7 +35,7 @@ func TestEnsure(t *testing.T) {
 		commands, notices          []string
 	}{
 		{name: "cached", commands: []string{inspect, list}},
-		{name: "pulled", missing: true, commands: []string{inspect, pull, tag, list}, notices: []string{pulling, "Test image pulled."}},
+		{name: "pulled", missing: true, commands: []string{inspect, pull, tag, untag, list}, notices: []string{pulling, "Test image pulled."}},
 		{name: "build", missing: true, noPull: true, commands: []string{inspect, pull, build, list}, notices: []string{pulling, fallback, building, "Test image built successfully."}},
 		{name: "stream", missing: true, noPull: true, stream: true, commands: []string{inspect, pull, build, list}, notices: []string{pulling, "Could not pull " + remote + "; building it locally.", building, "Test image built successfully."}},
 		{name: "disabled", missing: true, disabled: true, commands: []string{inspect, build, list}, notices: []string{building, "Test image built successfully."}},

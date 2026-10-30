@@ -58,11 +58,11 @@ func loggedCommands(t *testing.T, log string) []string {
 func TestLocalTags(t *testing.T) {
 	_, log := fakePruneDocker(t)
 	list := strings.Join([]string{
-		"dleplugin-static:old|2024-01-01 10:00:00 +0000 UTC",
-		"dleplugin-test:new|2024-03-01 10:00:00 +0000 UTC",
-		"other:tag|2024-04-01 10:00:00 +0000 UTC",
-		"dleplugin-test:<none>|2024-04-01 10:00:00 +0000 UTC",
-		"dleplugin-test:mid|2024-02-01 10:00:00 +0000 UTC",
+		"dleplugin-static:old|id-static|2024-01-01 10:00:00 +0000 UTC",
+		"dleplugin-test:new|id-new|2024-03-01 10:00:00 +0000 UTC",
+		"other:tag|id-other|2024-04-01 10:00:00 +0000 UTC",
+		"dleplugin-test:<none>|id-none|2024-04-01 10:00:00 +0000 UTC",
+		"dleplugin-test:mid|id-mid|2024-02-01 10:00:00 +0000 UTC",
 	}, "\n")
 	t.Setenv("IMAGE_LIST", list)
 	runner := process.NewRunner(process.Options{})
@@ -77,7 +77,7 @@ func TestLocalTags(t *testing.T) {
 	if want := []string{"other:tag", "dleplugin-test:new", "dleplugin-test:mid", "dleplugin-static:old"}; !reflect.DeepEqual(refs, want) {
 		t.Errorf("tags = %q, want %q", refs, want)
 	}
-	if tags[1].Repository != "dleplugin-test" || tags[1].Created.IsZero() {
+	if tags[1].Repository != "dleplugin-test" || tags[1].ID != "id-new" || tags[1].Created.IsZero() {
 		t.Errorf("tag = %+v", tags[1])
 	}
 	if cmds := loggedCommands(t, log); !reflect.DeepEqual(cmds, []string{"image ls --format " + tagsFormat}) {
@@ -88,12 +88,12 @@ func TestLocalTags(t *testing.T) {
 func TestPruneKeepsRecentTags(t *testing.T) {
 	_, log := fakePruneDocker(t)
 	img := Image{Name: "tool", Dockerfile: []byte("FROM scratch\n")}
-	current := "tool:" + strings.TrimPrefix(img.Tag(), "tool:")
+	current := img.Tag()
 	list := strings.Join([]string{
-		"tool:old|2024-01-01 10:00:00 +0000 UTC",
-		"tool:new|2024-03-01 10:00:00 +0000 UTC",
-		current + "|2023-12-01 10:00:00 +0000 UTC",
-		"tool:mid|2024-02-01 10:00:00 +0000 UTC",
+		"tool:old|id-old|2024-01-01 10:00:00 +0000 UTC",
+		"tool:new|id-new|2024-03-01 10:00:00 +0000 UTC",
+		current + "|id-current|2023-12-01 10:00:00 +0000 UTC",
+		"tool:mid|id-mid|2024-02-01 10:00:00 +0000 UTC",
 	}, "\n")
 	t.Setenv("IMAGE_LIST", list)
 	var notices []string
@@ -122,9 +122,9 @@ func TestPruneKeepsImagesUsedByContainers(t *testing.T) {
 	_, log := fakePruneDocker(t)
 	img := Image{Name: "tool", Dockerfile: []byte("FROM scratch\n")}
 	list := strings.Join([]string{
-		"tool:old|2024-01-01 10:00:00 +0000 UTC",
-		"tool:new|2024-03-01 10:00:00 +0000 UTC",
-		"tool:mid|2024-02-01 10:00:00 +0000 UTC",
+		"tool:old|id-old|2024-01-01 10:00:00 +0000 UTC",
+		"tool:new|id-new|2024-03-01 10:00:00 +0000 UTC",
+		"tool:mid|id-mid|2024-02-01 10:00:00 +0000 UTC",
 	}, "\n")
 	t.Setenv("IMAGE_LIST", list)
 	t.Setenv("PS_OUT", "container-id\n")
@@ -145,15 +145,65 @@ func TestPruneKeepsImagesUsedByContainers(t *testing.T) {
 	}
 }
 
+func TestPruneRemoteAliases(t *testing.T) {
+	_, log := fakePruneDocker(t)
+	img := Image{Name: "tool", Dockerfile: []byte("FROM scratch\n")}
+	list := strings.Join([]string{
+		"tool:new|id-new|2024-03-01 10:00:00 +0000 UTC",
+		"tool:old|id-old|2024-01-01 10:00:00 +0000 UTC",
+		"registry.test/tool:old|id-old|2024-01-01 10:00:00 +0000 UTC",
+		img.Tag() + "|id-current|2023-12-01 10:00:00 +0000 UTC",
+	}, "\n")
+	t.Setenv("IMAGE_LIST", list)
+	removed, err := Prune(context.Background(), process.NewRunner(process.Options{}), img, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"registry.test/tool:old", "tool:old"}; !reflect.DeepEqual(removed, want) {
+		t.Errorf("removed = %q, want %q", removed, want)
+	}
+	cmds := strings.Join(loggedCommands(t, log), "\n")
+	for _, ref := range []string{"registry.test/tool:old", "tool:old"} {
+		if !strings.Contains(cmds, "image rm "+ref) {
+			t.Errorf("alias %s not removed: %q", ref, cmds)
+		}
+	}
+	if strings.Contains(cmds, "image rm tool:new") {
+		t.Errorf("new tag removed: %q", cmds)
+	}
+}
+
+func TestPruneSkipsUnknownCreated(t *testing.T) {
+	_, log := fakePruneDocker(t)
+	img := Image{Name: "tool", Dockerfile: []byte("FROM scratch\n")}
+	list := strings.Join([]string{
+		"tool:new|id-new|2024-03-01 10:00:00 +0000 UTC",
+		"tool:mid|id-mid|2024-02-01 10:00:00 +0000 UTC",
+		"tool:unknown|id-unknown|not-a-date",
+	}, "\n")
+	t.Setenv("IMAGE_LIST", list)
+	removed, err := Prune(context.Background(), process.NewRunner(process.Options{}), img, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"tool:mid"}; !reflect.DeepEqual(removed, want) {
+		t.Errorf("removed = %q, want %q", removed, want)
+	}
+	cmds := strings.Join(loggedCommands(t, log), "\n")
+	if strings.Contains(cmds, "image rm tool:unknown") || strings.Contains(cmds, "ancestor=tool:unknown") {
+		t.Errorf("unknown creation time pruned: %q", cmds)
+	}
+}
+
 func TestPruneFailureIsBestEffortInEnsure(t *testing.T) {
 	_, log := fakePruneDocker(t)
 	img := Image{Name: "tool", Title: "test", Dockerfile: []byte("FROM scratch\n")}
 	t.Setenv("INSPECT_EXIT", "1")
 	t.Setenv("RM_EXIT", "1")
 	t.Setenv("IMAGE_LIST", strings.Join([]string{
-		"tool:old|2024-01-01 10:00:00 +0000 UTC",
-		"tool:new|2024-03-01 10:00:00 +0000 UTC",
-		"tool:mid|2024-02-01 10:00:00 +0000 UTC",
+		"tool:old|id-old|2024-01-01 10:00:00 +0000 UTC",
+		"tool:new|id-new|2024-03-01 10:00:00 +0000 UTC",
+		"tool:mid|id-mid|2024-02-01 10:00:00 +0000 UTC",
 	}, "\n"))
 	tag, err := Ensure(context.Background(), process.NewRunner(process.Options{}), img, false, nil)
 	if err != nil || tag != img.Tag() {

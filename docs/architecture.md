@@ -132,7 +132,8 @@ Registration rules:
 - registration results are available via `rt.Modules()` / `rt.ModuleErrors()`;
   module tests must assert that a module registers without errors;
 - top-level commands set `GroupID` to `app.GroupProject`, `app.GroupCheck`,
-  `app.GroupRelease`, `app.GroupHosts` or `app.GroupAgents`; the root help lists these groups in that order and the
+  `app.GroupRelease`, `app.GroupHosts`, `app.GroupAgents` or
+  `app.GroupMaintenance`; the root help lists these groups in that order and the
   commands of a group in registration order. Empty groups are omitted;
   commands without a known group appear under "Additional Commands".
 
@@ -225,9 +226,12 @@ services for deployment sites, PHPStan, and patch checking.
   directories and every DLE base except the current one (`--all` also removes
   the current base and the trial archive). `--docker` removes unused
   content-addressed `dleplugin-*` tool images while keeping images used by
-  containers and stable-tag images such as the hosts stack; `--older-than`
-  limits removals by age and `--dry-run` only reports them. The composer cache,
-  the global config and the hosts data are never touched.
+  containers and stable-tag images such as the hosts stack; registry aliases
+  are cleaned with their local tags, and image layers are counted once when no
+  tag remains. `--older-than` limits removals by age and `--dry-run` only
+  reports them. The composer cache, the global config and the hosts data are
+  never touched. Do not run it while tests are running: active run sites are
+  removed as well.
 - `check` takes the DLE directories to check as arguments (one or more; each
   is a DLE root with `engine/inc/include/init.php`). A ready plugin file is
   passed with `-f/--file` (also `.zip`). Every directory is reported as

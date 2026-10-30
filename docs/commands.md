@@ -46,7 +46,7 @@ Both skills are always installed together, offline, into the current directory's
 agent skills folder or the user's home with `--global`. No manifest or CLI config
 is required. See [agent skills](agent-skills.md) for conflict and removal rules.
 
-Cache module:
+Cache module (root help group: `Maintenance`):
 
 - `dleplugin cache clean [--all] [--older-than DURATION] [--docker] [--dry-run]`
 

@@ -21,9 +21,9 @@ import (
 // be redistributed, so every user downloads it.
 const TrialURL = "https://dle-news.ru/files/dle_trial.zip"
 
-// CacheRoot is the dleplugin "test" cache directory: the trial archive,
+// TestCacheDir is the dleplugin "test" cache directory: the trial archive,
 // installed bases and per-plugin run directories.
-func CacheRoot() (string, error) { return paths.CacheDir("test") }
+func TestCacheDir() (string, error) { return paths.CacheDir("test") }
 
 // Download fetches url into dest through a temporary file.
 func Download(ctx context.Context, client *http.Client, url, dest string) (err error) {

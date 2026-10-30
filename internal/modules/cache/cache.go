@@ -27,8 +27,9 @@ func (module) Commands(rt *app.Runtime) []*cobra.Command {
 
 func cacheCommand(rt *app.Runtime) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "cache",
-		Short: "Manage the dleplugin cache",
+		Use:     "cache",
+		GroupID: app.GroupMaintenance,
+		Short:   "Manage the dleplugin cache",
 		Long: `Manage data dleplugin keeps in its cache directory.
 
 The cache holds the downloaded DLE trial, installed DLE bases, per-plugin
@@ -58,7 +59,9 @@ one installed from the downloaded trial archive, or else the newest.
 --docker removes unused content-addressed dleplugin-* tool images (test and
 static); images used by containers and stable-tag images such as the hosts
 stack are kept. --older-than limits every removal to entries older than the
-duration, for example 24h or 30m.`,
+duration, for example 24h or 30m.
+
+Do not run this while a test is running: active run sites are removed too.`,
 		Example: "  dleplugin cache clean\n" +
 			"  dleplugin cache clean --older-than 24h\n" +
 			"  dleplugin cache clean --all --docker --dry-run",
@@ -66,12 +69,15 @@ duration, for example 24h or 30m.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if olderThan != "" {
 				d, err := time.ParseDuration(olderThan)
-				if err != nil || d < 0 {
-					return fmt.Errorf("Invalid --older-than duration %q (use for example 24h or 30m)", olderThan)
+				if err != nil || d <= 0 {
+					return fmt.Errorf("Invalid --older-than duration %q (use a positive duration such as 24h or 30m)", olderThan)
 				}
 				o.OlderThan = d
 			}
 			res, err := cacheclean.Clean(cmd.Context(), rt.Exec, o)
+			if err != nil && len(res.Errors) == 0 {
+				return err
+			}
 			printResult(rt, o, res)
 			for _, e := range res.Errors {
 				rt.UI.Warning(e.Error())
@@ -105,10 +111,13 @@ func printResult(rt *app.Runtime, o cacheclean.Options, res cacheclean.Result) {
 		rt.UI.Infof("Kept %s %s (used by a container)", e.Kind, e.Name)
 	}
 	if len(res.Removed) == 0 {
-		if len(res.Kept) == 0 {
-			rt.UI.Info("Cache is clean.")
-		} else {
+		switch {
+		case len(res.Errors) > 0:
+			rt.UI.Info("Nothing was removed.")
+		case len(res.Kept) > 0:
 			rt.UI.Info("Nothing to remove.")
+		default:
+			rt.UI.Info("Cache is clean.")
 		}
 		return
 	}

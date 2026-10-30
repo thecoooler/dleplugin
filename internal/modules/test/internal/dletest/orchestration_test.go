@@ -227,7 +227,7 @@ func TestWaitFor(t *testing.T) {
 	}
 }
 
-func TestCacheRootEnvironment(t *testing.T) {
+func TestTestCacheDirEnvironment(t *testing.T) {
 	for _, xdg := range []string{filepath.Join(t.TempDir(), "xdg"), ""} {
 		t.Setenv("XDG_CACHE_HOME", xdg)
 		t.Setenv("HOME", t.TempDir())
@@ -235,13 +235,13 @@ func TestCacheRootEnvironment(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := CacheRoot()
+		got, err := TestCacheDir()
 		want := filepath.Join(filepath.Dir(composer), "test") // dleplugin/test next to dleplugin/composer
 		if xdg != "" {
 			want = filepath.Join(xdg, "dleplugin", "test")
 		}
 		if err != nil || got != want {
-			t.Errorf("CacheRoot = %q, %v; want %q", got, err, want)
+			t.Errorf("TestCacheDir = %q, %v; want %q", got, err, want)
 		}
 	}
 }
@@ -351,7 +351,7 @@ func TestRunDownloadsInstallsAndReusesBase(t *testing.T) {
 	if code, err := Run(ctx, f.runner, o); err != nil || code != 0 {
 		t.Fatalf("Run = %d, %v", code, err)
 	}
-	root, err := CacheRoot()
+	root, err := TestCacheDir()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -459,7 +459,7 @@ func TestRunSetupFailuresCleanUp(t *testing.T) {
 			cmds := f.commands(t)
 			requireArgs(t, cmds[len(cmds)-2], "rm", "--force", "--volumes")
 			requireArgs(t, cmds[len(cmds)-1], "network", "rm")
-			root, err := CacheRoot()
+			root, err := TestCacheDir()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -489,7 +489,7 @@ func TestInstallBaseFailuresCleanUp(t *testing.T) {
 			if _, err := prepareBase(context.Background(), f.runner, Image.Tag(), &o); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("prepareBase = %v", err)
 			}
-			root, err := CacheRoot()
+			root, err := TestCacheDir()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -545,8 +545,10 @@ func TestPruneBases(t *testing.T) {
 	for _, name := range []string{"dle-old", "dle-previous", "dle-current", "other"} {
 		write(t, filepath.Join(root, name, ".ready"), "21.0\n")
 	}
+	// An interrupted installation without .ready must never be kept.
+	write(t, filepath.Join(root, "dle-broken", "site", "index.php"), "partial")
 	now := time.Now()
-	for name, age := range map[string]time.Duration{"dle-old": 3 * time.Hour, "dle-previous": time.Hour, "dle-current": 2 * time.Hour} {
+	for name, age := range map[string]time.Duration{"dle-old": 3 * time.Hour, "dle-previous": time.Hour, "dle-current": 2 * time.Hour, "dle-broken": 30 * time.Minute} {
 		p := filepath.Join(root, name)
 		if err := os.Chtimes(p, now.Add(-age), now.Add(-age)); err != nil {
 			t.Fatal(err)
@@ -556,7 +558,7 @@ func TestPruneBases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{filepath.Join(root, "dle-old")}; !reflect.DeepEqual(removed, want) {
+	if want := []string{filepath.Join(root, "dle-broken"), filepath.Join(root, "dle-old")}; !reflect.DeepEqual(removed, want) {
 		t.Errorf("removed = %q, want %q", removed, want)
 	}
 	for _, name := range []string{"dle-previous", "dle-current", "other"} {
@@ -609,7 +611,7 @@ func TestRunKeepsRunSite(t *testing.T) {
 	if code, err := Run(context.Background(), f.runner, o); err != nil || code != 0 {
 		t.Fatalf("Run = %d, %v", code, err)
 	}
-	root, err := CacheRoot()
+	root, err := TestCacheDir()
 	if err != nil {
 		t.Fatal(err)
 	}

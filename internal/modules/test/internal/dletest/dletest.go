@@ -251,7 +251,7 @@ func mounts(site string, o Options) ([]string, error) {
 // prepareBase downloads and installs the trial unless an installation of the
 // current archive exists, and returns its directory (site/ and dump.sql).
 func prepareBase(ctx context.Context, runner *process.Runner, image string, o *Options) (string, error) {
-	root, err := CacheRoot()
+	root, err := TestCacheDir()
 	if err != nil {
 		return "", err
 	}
@@ -347,8 +347,12 @@ func pruneBases(root, current string, keep int) ([]string, error) {
 	}
 	var removed []string
 	var errs []error
-	for i, b := range others {
-		if i < keepOther {
+	kept := 0
+	for _, b := range others {
+		// Failed or interrupted installations have no .ready marker; they are
+		// removed instead of being kept as the previous release.
+		if _, err := os.Stat(filepath.Join(b.path, ".ready")); err == nil && kept < keepOther {
+			kept++
 			continue
 		}
 		if err := os.RemoveAll(b.path); err != nil {
@@ -414,10 +418,10 @@ func installBase(ctx context.Context, runner *process.Runner, image, base, site 
 	return nil
 }
 
-// newRunSite replaces <CacheRoot>/run/<slug>-<hash>/ with a copy of the
+// newRunSite replaces <TestCacheDir>/run/<slug>-<hash>/ with a copy of the
 // installed site and returns it.
 func newRunSite(base string, p *plugin.Plugin) (string, error) {
-	root, err := CacheRoot()
+	root, err := TestCacheDir()
 	if err != nil {
 		return "", err
 	}

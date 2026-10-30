@@ -220,20 +220,30 @@ func cleanBases(dir string, all bool, cutoff time.Time, dryRun bool, res *Result
 }
 
 // currentBase returns the base installed from the downloaded trial archive,
-// or the newest base when the archive is missing or has no matching base.
+// or the newest complete base when the archive is missing or has no matching
+// base. Incomplete installations (no .ready) are never current.
 func currentBase(dir string, bases []baseInfo) string {
+	ready := make([]baseInfo, 0, len(bases))
+	for _, b := range bases {
+		if _, err := os.Stat(filepath.Join(b.path, ".ready")); err == nil {
+			ready = append(ready, b)
+		}
+	}
+	if len(ready) == 0 {
+		return ""
+	}
 	if sum, err := fileHash(filepath.Join(dir, "dle_trial.zip")); err == nil {
 		want := filepath.Join(dir, "dle-"+sum[:12])
-		for _, b := range bases {
+		for _, b := range ready {
 			if b.path == want {
 				return want
 			}
 		}
 	}
-	newest := ""
-	var newestMod time.Time
-	for _, b := range bases {
-		if newest == "" || b.mod.After(newestMod) {
+	newest := ready[0].path
+	newestMod := ready[0].mod
+	for _, b := range ready[1:] {
+		if b.mod.After(newestMod) {
 			newest, newestMod = b.path, b.mod
 		}
 	}
@@ -260,12 +270,30 @@ func cleanFile(path string, kind Kind, cutoff time.Time, dryRun bool, res *Resul
 	res.remove(Entry{Kind: kind, Name: filepath.Base(path), Size: info.Size()})
 }
 
-// cleanImages removes local tool image tags not used by a container.
+// cleanImages removes local tool image tags not used by a container. Tags of
+// one image (a local tag plus its registry alias) are grouped: their layers
+// are freed only when no tag of the image remains, and counted once.
 func cleanImages(ctx context.Context, runner *process.Runner, cutoff time.Time, dryRun bool, res *Result) error {
 	tags, err := dockerimg.LocalTags(ctx, runner)
 	if err != nil {
 		return err
 	}
+	byID := map[string][]dockerimg.TagInfo{}
+	for _, tag := range tags {
+		byID[tag.ID] = append(byID[tag.ID], tag)
+	}
+	sizes := map[string]int64{}
+	sizeOf := func(tag dockerimg.TagInfo) int64 {
+		if size, ok := sizes[tag.ID]; ok {
+			return size
+		}
+		size, _ := dockerimg.ImageSize(ctx, runner, tag.Reference)
+		sizes[tag.ID] = size
+		return size
+	}
+
+	var removed []dockerimg.TagInfo
+	removedRefs := map[string]bool{}
 	for _, tag := range tags {
 		if !isToolImage(tag) {
 			continue
@@ -282,7 +310,7 @@ func cleanImages(ctx context.Context, runner *process.Runner, cutoff time.Time, 
 			res.Errors = append(res.Errors, err)
 			continue
 		}
-		size, _ := dockerimg.ImageSize(ctx, runner, tag.Reference)
+		size := sizeOf(tag)
 		if used {
 			res.Kept = append(res.Kept, Entry{Kind: Image, Name: tag.Reference, Size: size})
 			continue
@@ -293,16 +321,53 @@ func cleanImages(ctx context.Context, runner *process.Runner, cutoff time.Time, 
 				continue
 			}
 		}
-		res.remove(Entry{Kind: Image, Name: tag.Reference, Size: size})
+		removed = append(removed, tag)
+		removedRefs[tag.Reference] = true
+	}
+
+	groups := map[string][]dockerimg.TagInfo{}
+	for _, tag := range removed {
+		groups[tag.ID] = append(groups[tag.ID], tag)
+	}
+	ids := make([]string, 0, len(groups))
+	for id := range groups {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		group := groups[id]
+		refs := make([]string, len(group))
+		for i, tag := range group {
+			refs[i] = tag.Reference
+		}
+		sort.Strings(refs)
+		complete := true
+		for _, tag := range byID[id] {
+			if !removedRefs[tag.Reference] {
+				complete = false
+				break
+			}
+		}
+		size := int64(0)
+		if complete {
+			size = sizes[id]
+		}
+		res.Removed = append(res.Removed, Entry{Kind: Image, Name: strings.Join(refs, ", "), Size: size})
+		res.Freed += size
 	}
 	return nil
 }
 
 // isToolImage reports whether the tag belongs to a tool image built by
-// dockerimg: a dleplugin-* repository with a content-derived 12-hex tag.
-// Stable tags such as the hosts stack images are left alone.
+// dockerimg: a dleplugin-* repository (also behind a registry prefix) with a
+// content-derived 12-hex tag. Stable tags such as the hosts stack images are
+// left alone.
 func isToolImage(tag dockerimg.TagInfo) bool {
-	if !strings.HasPrefix(tag.Repository, dockerimg.TagPrefix) || len(tag.Tag) != 12 {
+	repo := tag.Repository
+	if i := strings.LastIndex(repo, "/"); i >= 0 {
+		repo = repo[i+1:]
+	}
+	if !strings.HasPrefix(repo, dockerimg.TagPrefix) || len(tag.Tag) != 12 {
 		return false
 	}
 	for _, c := range tag.Tag {

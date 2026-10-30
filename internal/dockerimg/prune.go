@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,14 +21,15 @@ const TagPrefix = "dleplugin-"
 
 // TagInfo describes a local image tag.
 type TagInfo struct {
-	// Reference is "repository:tag".
+	// Reference is "repository:tag"; ID identifies the underlying image.
 	Reference  string
 	Repository string
 	Tag        string
+	ID         string
 	Created    time.Time
 }
 
-const tagsFormat = "{{.Repository}}:{{.Tag}}|{{.CreatedAt}}"
+const tagsFormat = "{{.Repository}}:{{.Tag}}|{{.ID}}|{{.CreatedAt}}"
 
 // LocalTags lists the local image tags, newest first.
 func LocalTags(ctx context.Context, runner *process.Runner) ([]TagInfo, error) {
@@ -38,7 +40,7 @@ func LocalTags(ctx context.Context, runner *process.Runner) ([]TagInfo, error) {
 	var tags []TagInfo
 	for _, line := range strings.Split(out, "\n") {
 		parts := strings.Split(strings.TrimSpace(line), "|")
-		if len(parts) != 2 {
+		if len(parts) != 3 {
 			continue
 		}
 		ref := parts[0]
@@ -50,7 +52,7 @@ func LocalTags(ctx context.Context, runner *process.Runner) ([]TagInfo, error) {
 		if tag == "<none>" {
 			continue
 		}
-		tags = append(tags, TagInfo{Reference: ref, Repository: repo, Tag: tag, Created: parseCreated(parts[1])})
+		tags = append(tags, TagInfo{Reference: ref, Repository: repo, Tag: tag, ID: parts[1], Created: parseCreated(parts[2])})
 	}
 	sort.SliceStable(tags, func(i, j int) bool {
 		ti, tj := tags[i].Created, tags[j].Created
@@ -68,7 +70,13 @@ func LocalTags(ctx context.Context, runner *process.Runner) ([]TagInfo, error) {
 	return tags, nil
 }
 
-var createdLayouts = []string{"2006-01-02 15:04:05 -0700 MST", "2006-01-02 15:04:05 -0700", time.RFC3339Nano}
+var createdLayouts = []string{
+	"2006-01-02 15:04:05.999999999 -0700 MST",
+	"2006-01-02 15:04:05.999999999 -0700",
+	"2006-01-02 15:04:05 -0700 MST",
+	"2006-01-02 15:04:05 -0700",
+	time.RFC3339Nano,
+}
 
 func parseCreated(s string) time.Time {
 	for _, layout := range createdLayouts {
@@ -121,7 +129,9 @@ func Prune(ctx context.Context, runner *process.Runner, img Image, keep int, not
 	}
 	var mine []TagInfo
 	for _, t := range tags {
-		if t.Repository == img.Name {
+		// Include registry aliases: a pulled image keeps a second tag such as
+		// ghcr.io/thecoooler/dleplugin-test:<tag>.
+		if path.Base(t.Repository) == img.Name {
 			mine = append(mine, t)
 		}
 	}
@@ -133,6 +143,10 @@ func Prune(ctx context.Context, runner *process.Runner, img Image, keep int, not
 	var errs []error
 	for _, t := range mine {
 		if kept[t.Reference] {
+			continue
+		}
+		// An unknown creation date cannot establish recency; never prune it.
+		if t.Created.IsZero() {
 			continue
 		}
 		used, err := UsedByContainer(ctx, runner, t.Reference)

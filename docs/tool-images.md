@@ -6,8 +6,10 @@ by release, and Composer installs the complete locked dependency graph.
 Every embedded build-context input contributes to the image tag, so new
 versions build a new image. After a pull or build, the two most recent tags of
 the image repository are kept and older tags not used by a container are
-removed. `dleplugin cache clean --docker` removes unused content-addressed
-tool images across both repositories.
+removed. A pulled image is tagged locally and its registry reference is removed
+again, so pruning the local tag also releases the layers. `dleplugin cache
+clean --docker` removes unused content-addressed tool images across both
+repositories.
 
 To update Composer tools, run `composer update` in the corresponding asset
 directory using the pinned PHP/Composer environment, review both JSON/lock

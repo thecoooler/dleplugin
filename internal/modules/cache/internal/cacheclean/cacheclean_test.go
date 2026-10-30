@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +54,9 @@ func layout(t *testing.T, root string, now time.Time) string {
 	write(t, filepath.Join(current, "site", "index.php"), strings.Repeat("c", 100))
 	write(t, filepath.Join(root, "test", "dle-old", "site", "index.php"), strings.Repeat("o", 50))
 	write(t, filepath.Join(root, "test", "dle-older", "site", "index.php"), strings.Repeat("e", 70))
+	for _, base := range []string{current, filepath.Join(root, "test", "dle-old"), filepath.Join(root, "test", "dle-older")} {
+		write(t, filepath.Join(base, ".ready"), "")
+	}
 	atime(t, current, now.Add(-time.Minute))
 	atime(t, filepath.Join(root, "test", "dle-old"), now.Add(-2*time.Hour))
 	atime(t, filepath.Join(root, "test", "dle-older"), now.Add(-3*time.Hour))
@@ -103,8 +107,10 @@ func TestCleanUsesTrialArchiveForCurrentBase(t *testing.T) {
 	sum := sha256.Sum256([]byte("trial"))
 	current := filepath.Join(dir, "dle-"+hex.EncodeToString(sum[:])[:12])
 	write(t, filepath.Join(current, "site", "index.php"), "current")
+	write(t, filepath.Join(current, ".ready"), "")
 	newest := filepath.Join(dir, "dle-newest")
 	write(t, filepath.Join(newest, "site", "index.php"), "newest")
+	write(t, filepath.Join(newest, ".ready"), "")
 	// The newest directory is not the one installed from the archive.
 	atime(t, current, now.Add(-2*time.Hour))
 	atime(t, newest, now.Add(-time.Minute))
@@ -117,6 +123,35 @@ func TestCleanUsesTrialArchiveForCurrentBase(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(current, "site")); err != nil {
 		t.Errorf("current base removed: %v", err)
+	}
+}
+
+func TestCleanKeepsOnlyCompleteBase(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now()
+	dir := filepath.Join(root, "test")
+	write(t, filepath.Join(dir, "dle_trial.zip"), "trial")
+	sum := sha256.Sum256([]byte("trial"))
+	incomplete := filepath.Join(dir, "dle-"+hex.EncodeToString(sum[:])[:12])
+	write(t, filepath.Join(incomplete, "site", "index.php"), "partial")
+	valid := filepath.Join(dir, "dle-valid")
+	write(t, filepath.Join(valid, "site", "index.php"), "valid")
+	write(t, filepath.Join(valid, ".ready"), "21.0\n")
+	atime(t, incomplete, now.Add(-time.Minute))
+	atime(t, valid, now.Add(-time.Hour))
+
+	res, err := Clean(context.Background(), nil, Options{Root: root, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"DLE base " + filepath.Base(incomplete)}; !reflect.DeepEqual(entryNames(res.Removed), want) {
+		t.Errorf("removed = %q, want %q", entryNames(res.Removed), want)
+	}
+	if _, err := os.Stat(valid); err != nil {
+		t.Errorf("complete base removed: %v", err)
+	}
+	if _, err := os.Stat(incomplete); !os.IsNotExist(err) {
+		t.Errorf("incomplete base remains: %v", err)
 	}
 }
 
@@ -235,11 +270,11 @@ func fakeDocker(t *testing.T) {
 	t.Setenv("RM_LOG", filepath.Join(dir, "rm.log"))
 	t.Setenv("IMAGE_SIZE", "100")
 	t.Setenv("IMAGE_LIST", strings.Join([]string{
-		"dleplugin-test:111111111111|2023-01-01 10:00:00 +0000 UTC",
-		"dleplugin-test:222222222222|2024-01-02 09:00:00 +0000 UTC",
-		"dleplugin-test:333333333333|2023-01-01 10:00:00 +0000 UTC",
-		"dleplugin-hosts-php85:latest|2023-01-01 10:00:00 +0000 UTC",
-		"other:tag|2023-01-01 10:00:00 +0000 UTC",
+		"dleplugin-test:111111111111|id-old|2023-01-01 10:00:00 +0000 UTC",
+		"dleplugin-test:222222222222|id-new|2024-01-02 09:00:00 +0000 UTC",
+		"dleplugin-test:333333333333|id-busy|2023-01-01 10:00:00 +0000 UTC",
+		"dleplugin-hosts-php85:latest|id-hosts|2023-01-01 10:00:00 +0000 UTC",
+		"other:tag|id-other|2023-01-01 10:00:00 +0000 UTC",
 	}, "\n"))
 }
 
@@ -282,6 +317,58 @@ func TestCleanDockerImages(t *testing.T) {
 	}
 	if len(res.Removed) != 1 {
 		t.Errorf("dry run removed = %q", entryNames(res.Removed))
+	}
+}
+
+func TestCleanDockerAliasesAndPartialRemoval(t *testing.T) {
+	fakeDocker(t)
+	t.Setenv("IMAGE_LIST", strings.Join([]string{
+		"dleplugin-test:111111111111|id-a|2023-01-01 10:00:00 +0000 UTC",
+		"ghcr.io/thecoooler/dleplugin-test:111111111111|id-a|2023-01-01 10:00:00 +0000 UTC",
+		"dleplugin-test:444444444444|id-b|2023-01-01 10:00:00 +0000 UTC",
+		"dleplugin-test:555555555555|id-b|2024-01-02 09:00:00 +0000 UTC",
+		"dleplugin-static:666666666666|id-c|2023-01-01 10:00:00 +0000 UTC",
+	}, "\n"))
+	root := t.TempDir()
+	now := time.Date(2024, 1, 2, 12, 0, 0, 0, time.UTC)
+	res, err := Clean(context.Background(), process.NewRunner(process.Options{}), Options{
+		Root: root, Docker: true, OlderThan: 24 * time.Hour, Now: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"image dleplugin-static:666666666666",
+		"image dleplugin-test:111111111111, ghcr.io/thecoooler/dleplugin-test:111111111111",
+		"image dleplugin-test:444444444444",
+	}
+	if got := entryNames(res.Removed); !reflect.DeepEqual(got, want) {
+		t.Errorf("removed = %q, want %q", got, want)
+	}
+	// id-a (both aliases) and id-c are fully removed; id-b still has a newer
+	// tag, so its layers are not freed.
+	if res.Freed != 200 {
+		t.Errorf("freed = %d, want 200", res.Freed)
+	}
+	for _, e := range res.Removed {
+		if e.Name == "dleplugin-test:444444444444" && e.Size != 0 {
+			t.Errorf("partial removal counted %d bytes", e.Size)
+		}
+	}
+	log, err := os.ReadFile(os.Getenv("RM_LOG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed := strings.Split(strings.TrimSpace(string(log)), "\n")
+	for _, ref := range []string{
+		"dleplugin-test:111111111111",
+		"ghcr.io/thecoooler/dleplugin-test:111111111111",
+		"dleplugin-test:444444444444",
+		"dleplugin-static:666666666666",
+	} {
+		if !slices.Contains(removed, ref) {
+			t.Errorf("tag %s not removed: %q", ref, removed)
+		}
 	}
 }
 

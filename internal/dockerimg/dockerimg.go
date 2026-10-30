@@ -191,6 +191,11 @@ func pull(ctx context.Context, runner *process.Runner, img Image, stream bool, n
 	res, err := runner.Run(pullCtx, process.Command{Name: "docker", Args: []string{"pull", remote}, Stream: stream})
 	if err == nil {
 		res, err = runner.Run(ctx, process.Command{Name: "docker", Args: []string{"tag", remote, img.Tag()}})
+		if err == nil {
+			// The registry reference would keep the image layers alive after
+			// the local tag is pruned; the local tag is all that is needed.
+			_, _ = runner.Run(ctx, process.Command{Name: "docker", Args: []string{"image", "rm", remote}})
+		}
 	}
 	if ctx.Err() != nil {
 		return false, ctx.Err()
