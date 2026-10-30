@@ -22,7 +22,9 @@ func TestEnsure(t *testing.T) {
 	img := Image{Name: "tool", Title: "test", Dockerfile: []byte("FROM scratch\n"), Files: map[string][]byte{"z.lock": []byte("locked"), "a.json": []byte("{}")}}
 	remote := "registry.test/owner/" + img.Tag()
 	inspect := "image inspect " + img.Tag()
+	list := "image ls --format " + tagsFormat
 	pull, tag, build := "pull "+remote, "tag "+remote+" "+img.Tag(), "build --tag "+img.Tag()+" -"
+	untag := "image rm " + remote
 	pulling := "Pulling test image " + remote + "..."
 	fallback := "Could not pull " + remote + " (pull denied); building it locally."
 	building := "Building test image " + img.Tag() + "..."
@@ -32,11 +34,11 @@ func TestEnsure(t *testing.T) {
 		stream, disabled, noRemote bool
 		commands, notices          []string
 	}{
-		{name: "cached", commands: []string{inspect}},
-		{name: "pulled", missing: true, commands: []string{inspect, pull, tag}, notices: []string{pulling, "Test image pulled."}},
-		{name: "build", missing: true, noPull: true, commands: []string{inspect, pull, build}, notices: []string{pulling, fallback, building, "Test image built successfully."}},
-		{name: "stream", missing: true, noPull: true, stream: true, commands: []string{inspect, pull, build}, notices: []string{pulling, "Could not pull " + remote + "; building it locally.", building, "Test image built successfully."}},
-		{name: "disabled", missing: true, disabled: true, commands: []string{inspect, build}, notices: []string{building, "Test image built successfully."}},
+		{name: "cached", commands: []string{inspect, list}},
+		{name: "pulled", missing: true, commands: []string{inspect, pull, tag, untag, list}, notices: []string{pulling, "Test image pulled."}},
+		{name: "build", missing: true, noPull: true, commands: []string{inspect, pull, build, list}, notices: []string{pulling, fallback, building, "Test image built successfully."}},
+		{name: "stream", missing: true, noPull: true, stream: true, commands: []string{inspect, pull, build, list}, notices: []string{pulling, "Could not pull " + remote + "; building it locally.", building, "Test image built successfully."}},
+		{name: "disabled", missing: true, disabled: true, commands: []string{inspect, build, list}, notices: []string{building, "Test image built successfully."}},
 		{name: "failure", missing: true, noPull: true, fail: true, commands: []string{inspect, pull, build}, notices: []string{pulling, fallback, building}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -44,7 +46,12 @@ func TestEnsure(t *testing.T) {
 			script := `#!/bin/sh
 printf '%s\n' "$*" >> "$DOCKER_LOG"
 case "$1" in
- image) exit "$INSPECT_EXIT" ;;
+ image) case "$2" in
+  inspect) exit "$INSPECT_EXIT" ;;
+  ls) printf '%s' "${IMAGE_LIST:-}"; exit 0 ;;
+  rm) exit 0 ;;
+ esac; exit 2 ;;
+ ps) printf '%s' "${PS_OUT:-}" ;;
  pull) printf 'pull output'; printf 'pull progress\npull denied\n' >&2; exit "$PULL_EXIT" ;;
  tag) exit 0 ;;
  build) cat > "$BUILD_CONTEXT"; printf 'build output'; printf 'build diagnostic' >&2; exit "$BUILD_EXIT" ;;

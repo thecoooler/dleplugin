@@ -45,6 +45,17 @@ Both skills are always installed together, offline, into the current directory's
 agent skills folder or the user's home with `--global`. No manifest or CLI config
 is required. See [agent skills](agent-skills.md) for conflict and removal rules.
 
+Cache module (root help group: `Maintenance`):
+
+- `dleplugin cache clean [--all] [--older-than DURATION] [--docker] [--dry-run]`
+
+Without flags, removes test run sites, static analysis work directories and
+every installed DLE trial base except the current one. `--all` also removes
+the current base and the downloaded trial archive, `--older-than` limits every
+removal by age, and `--docker` removes unused content-addressed `dleplugin-*`
+tool images while keeping images used by containers (including the hosts
+stack). `--dry-run` reports the freed size without removing anything.
+
 ## Validation Commands
 
 ```bash
@@ -72,6 +83,8 @@ dleplugin skills --help
 dleplugin skills list --help
 dleplugin skills install --help
 dleplugin skills uninstall --help
+dleplugin cache --help
+dleplugin cache clean --help
 ```
 
 ## Golden fixtures

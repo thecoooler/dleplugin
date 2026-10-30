@@ -23,14 +23,23 @@ func FindAncestorWith(dir, marker string) (string, bool) {
 	}
 }
 
-// CacheDir returns the dleplugin cache directory name: an absolute
-// $XDG_CACHE_HOME, then the platform cache root, plus dleplugin/name.
-func CacheDir(name string) (string, error) {
+// CacheRoot returns the dleplugin cache directory: an absolute
+// $XDG_CACHE_HOME, then the platform cache root, plus dleplugin.
+func CacheRoot() (string, error) {
 	root, err := cacheRoot(runtime.GOOS)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, "dleplugin", name), nil
+	return filepath.Join(root, "dleplugin"), nil
+}
+
+// CacheDir returns CacheRoot()/name.
+func CacheDir(name string) (string, error) {
+	root, err := CacheRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, name), nil
 }
 
 // ComposerCacheDir returns the Composer cache shared by dleplugin tools.

@@ -76,6 +76,9 @@ internal/modules/hosts/internal/hostconfig/
 internal/modules/skills/   the skills module: skills list/install/uninstall
 internal/modules/skills/internal/bundle/
                            embedded skill trees and managed copy lifecycle
+internal/modules/cache/    the cache module: cache clean
+internal/modules/cache/internal/cacheclean/
+                           cache directories, DLE bases and Docker image tags
 testdata/golden/           golden fixtures (see testdata/README.md)
 ```
 
@@ -113,7 +116,7 @@ func main() {
 }
 
 func modules() []app.Module {
-	return []app.Module{initcmd.Module(), buildcmd.Module(), convertcmd.Module(), diffcmd.Module(), deploy.Module(), static.Module(), test.Module(), check.Module(), hosts.Module(), skills.Module()}
+	return []app.Module{initcmd.Module(), buildcmd.Module(), convertcmd.Module(), diffcmd.Module(), deploy.Module(), static.Module(), test.Module(), check.Module(), hosts.Module(), skills.Module(), cache.Module()}
 }
 ```
 
@@ -128,7 +131,8 @@ Registration rules:
 - registration results are available via `rt.Modules()` / `rt.ModuleErrors()`;
   module tests must assert that a module registers without errors;
 - top-level commands set `GroupID` to `app.GroupProject`, `app.GroupCheck`,
-  `app.GroupRelease`, `app.GroupHosts` or `app.GroupAgents`; the root help lists these groups in that order and the
+  `app.GroupRelease`, `app.GroupHosts`, `app.GroupAgents` or
+  `app.GroupMaintenance`; the root help lists these groups in that order and the
   commands of a group in registration order. Empty groups are omitted;
   commands without a known group appear under "Additional Commands".
 
@@ -204,7 +208,9 @@ services for deployment sites, PHPStan, and patch checking.
   Go regular expressions (RE2: no lookarounds). Findings or an analyser
   failure exit with code 1, without an extra error line. `--php-version`
   writes PHPStan's `phpVersion` instead of rebuilding the image for another
-  PHP.
+  PHP. After a pull or build, `dockerimg.Ensure` keeps the two most recent
+  versions of the image (including the current one; registry aliases count as
+  one version) and removes older tags not used by a container.
 - `test` runs against the downloaded DLE trial, always the current release,
   with a fresh MariaDB database per run. Pest runs in Docker with `/dle` as
   the project root, so snapshots use Pest's standard layout
@@ -213,7 +219,19 @@ services for deployment sites, PHPStan, and patch checking.
   `dependencies` field of `dleplugin.yml` (plugin names, written to
   `<needplugin>`). MariaDB runs with `sql_mode=NO_ENGINE_SUBSTITUTION`: DLE 21
   tables have NOT NULL columns without defaults that plugin registration does
-  not fill.
+  not fill. Every run site is removed after the run (`--keep-run` keeps it for
+  debugging), and installing a new trial base removes older bases except the
+  previous release.
+- `cache clean` removes the transient caches: test run sites, static work
+  directories and every DLE base except the current one (`--all` also removes
+  the current base and the trial archive). `--docker` removes unused
+  content-addressed `dleplugin-*` tool images while keeping images used by
+  containers and stable-tag images such as the hosts stack; registry aliases
+  are cleaned with their local tags, and image layers are counted once when no
+  tag remains. `--older-than` limits removals by age and `--dry-run` only
+  reports them. The composer cache, the global config and the hosts data are
+  never touched. Do not run it while tests are running: active run sites are
+  removed as well.
 - `check` takes the DLE directories to check as arguments (one or more; each
   is a DLE root with `engine/inc/include/init.php`). A ready plugin file is
   passed with `-f/--file` (also `.zip`). Every directory is reported as

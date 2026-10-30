@@ -29,11 +29,12 @@ type Module interface {
 // a group keep their registration order; commands without a known group are
 // listed under "Additional Commands".
 const (
-	GroupProject = "project"
-	GroupCheck   = "check"
-	GroupRelease = "release"
-	GroupHosts   = "hosts"
-	GroupAgents  = "agents"
+	GroupProject     = "project"
+	GroupCheck       = "check"
+	GroupRelease     = "release"
+	GroupHosts       = "hosts"
+	GroupAgents      = "agents"
+	GroupMaintenance = "maintenance"
 )
 
 var groups = []*cobra.Group{
@@ -42,6 +43,7 @@ var groups = []*cobra.Group{
 	{ID: GroupRelease, Title: "Build and deploy:"},
 	{ID: GroupHosts, Title: "DLE hosts:"},
 	{ID: GroupAgents, Title: "AI agents:"},
+	{ID: GroupMaintenance, Title: "Maintenance:"},
 }
 
 // versioned is implemented by modules that have their own version.

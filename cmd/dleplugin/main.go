@@ -4,6 +4,7 @@ package main
 import (
 	"github.com/thecoooler/dleplugin/internal/app"
 	"github.com/thecoooler/dleplugin/internal/modules/buildcmd"
+	"github.com/thecoooler/dleplugin/internal/modules/cache"
 	"github.com/thecoooler/dleplugin/internal/modules/check"
 	"github.com/thecoooler/dleplugin/internal/modules/convertcmd"
 	"github.com/thecoooler/dleplugin/internal/modules/deploy"
@@ -21,5 +22,5 @@ func main() {
 
 // modules lists the compiled-in modules in registration order.
 func modules() []app.Module {
-	return []app.Module{initcmd.Module(), buildcmd.Module(), convertcmd.Module(), diffcmd.Module(), deploy.Module(), static.Module(), test.Module(), check.Module(), hosts.Module(), skills.Module()}
+	return []app.Module{initcmd.Module(), buildcmd.Module(), convertcmd.Module(), diffcmd.Module(), deploy.Module(), static.Module(), test.Module(), check.Module(), hosts.Module(), skills.Module(), cache.Module()}
 }

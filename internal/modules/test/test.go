@@ -100,5 +100,6 @@ are connected before it. Exits with Pest's exit code.`,
 	f.Float64Var(&coverageMin, "coverage-min", 0, "Fail when coverage is below this percentage (implies --coverage)")
 	f.StringVar(&o.CoverageHTML, "coverage-html", "", "Write an HTML coverage report to this directory (implies --coverage)")
 	f.BoolVar(&o.Refresh, "refresh-dle", false, "Download and install the DLE trial again")
+	f.BoolVar(&o.KeepRun, "keep-run", false, "Keep the run site after the run for debugging")
 	return cmd
 }
