@@ -83,9 +83,6 @@ Do not run this while a test is running: active run sites are removed too.`,
 				rt.UI.Warning(e.Error())
 			}
 			if err != nil {
-				if len(res.Errors) == 0 {
-					return err
-				}
 				return &app.SilentExit{Code: 1}
 			}
 			return nil
@@ -113,7 +110,11 @@ func printResult(rt *app.Runtime, o cacheclean.Options, res cacheclean.Result) {
 	if len(res.Removed) == 0 {
 		switch {
 		case len(res.Errors) > 0:
-			rt.UI.Info("Nothing was removed.")
+			if o.DryRun {
+				rt.UI.Info("Nothing would be removed.")
+			} else {
+				rt.UI.Info("Nothing was removed.")
+			}
 		case len(res.Kept) > 0:
 			rt.UI.Info("Nothing to remove.")
 		default:

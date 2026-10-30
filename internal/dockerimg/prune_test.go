@@ -92,7 +92,7 @@ func TestPruneKeepsRecentTags(t *testing.T) {
 	list := strings.Join([]string{
 		"tool:old|id-old|2024-01-01 10:00:00 +0000 UTC",
 		"tool:new|id-new|2024-03-01 10:00:00 +0000 UTC",
-		current + "|id-current|2023-12-01 10:00:00 +0000 UTC",
+		current + "|id-current|2024-04-01 10:00:00 +0000 UTC",
 		"tool:mid|id-mid|2024-02-01 10:00:00 +0000 UTC",
 	}, "\n")
 	t.Setenv("IMAGE_LIST", list)
@@ -101,15 +101,18 @@ func TestPruneKeepsRecentTags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(removed, []string{"tool:old"}) {
+	// KeepTags counts the current version: one previous release survives.
+	if !reflect.DeepEqual(removed, []string{"tool:mid", "tool:old"}) {
 		t.Errorf("removed = %q", removed)
 	}
-	if want := []string{"Removed old image tool:old."}; !reflect.DeepEqual(notices, want) {
+	if want := []string{"Removed old image tool:mid.", "Removed old image tool:old."}; !reflect.DeepEqual(notices, want) {
 		t.Errorf("notices = %q", notices)
 	}
 	cmds := loggedCommands(t, log)
 	want := []string{
 		"image ls --format " + tagsFormat,
+		"ps --all --quiet --filter ancestor=tool:mid",
+		"image rm tool:mid",
 		"ps --all --quiet --filter ancestor=tool:old",
 		"image rm tool:old",
 	}
@@ -149,27 +152,56 @@ func TestPruneRemoteAliases(t *testing.T) {
 	_, log := fakePruneDocker(t)
 	img := Image{Name: "tool", Dockerfile: []byte("FROM scratch\n")}
 	list := strings.Join([]string{
-		"tool:new|id-new|2024-03-01 10:00:00 +0000 UTC",
+		"tool:new|id-new|2024-02-01 10:00:00 +0000 UTC",
 		"tool:old|id-old|2024-01-01 10:00:00 +0000 UTC",
 		"registry.test/tool:old|id-old|2024-01-01 10:00:00 +0000 UTC",
-		img.Tag() + "|id-current|2023-12-01 10:00:00 +0000 UTC",
+		img.Tag() + "|id-current|2024-03-01 10:00:00 +0000 UTC",
 	}, "\n")
 	t.Setenv("IMAGE_LIST", list)
 	removed, err := Prune(context.Background(), process.NewRunner(process.Options{}), img, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"registry.test/tool:old", "tool:old"}; !reflect.DeepEqual(removed, want) {
+	if want := []string{"tool:new", "registry.test/tool:old", "tool:old"}; !reflect.DeepEqual(removed, want) {
 		t.Errorf("removed = %q, want %q", removed, want)
 	}
 	cmds := strings.Join(loggedCommands(t, log), "\n")
-	for _, ref := range []string{"registry.test/tool:old", "tool:old"} {
+	for _, ref := range []string{"tool:new", "registry.test/tool:old", "tool:old"} {
 		if !strings.Contains(cmds, "image rm "+ref) {
-			t.Errorf("alias %s not removed: %q", ref, cmds)
+			t.Errorf("%s not removed: %q", ref, cmds)
 		}
 	}
-	if strings.Contains(cmds, "image rm tool:new") {
-		t.Errorf("new tag removed: %q", cmds)
+	if strings.Contains(cmds, "image rm "+img.Tag()) {
+		t.Errorf("current image removed: %q", cmds)
+	}
+}
+
+func TestPruneAliasesShareRetentionSlots(t *testing.T) {
+	_, log := fakePruneDocker(t)
+	img := Image{Name: "tool", Dockerfile: []byte("FROM scratch\n")}
+	list := strings.Join([]string{
+		"ghcr.io/registry/tool:" + strings.TrimPrefix(img.Tag(), "tool:") + "|id-current|2024-04-01 10:00:00 +0000 UTC",
+		img.Tag() + "|id-current|2024-04-01 10:00:00 +0000 UTC",
+		"ghcr.io/registry/tool:new|id-new|2024-03-01 10:00:00 +0000 UTC",
+		"tool:new|id-new|2024-03-01 10:00:00 +0000 UTC",
+		"tool:mid|id-mid|2024-02-01 10:00:00 +0000 UTC",
+		"tool:old|id-old|2024-01-01 10:00:00 +0000 UTC",
+	}, "\n")
+	t.Setenv("IMAGE_LIST", list)
+	removed, err := Prune(context.Background(), process.NewRunner(process.Options{}), img, KeepTags, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both aliases of the current and previous versions survive; aliases do
+	// not consume the two version slots.
+	if want := []string{"tool:mid", "tool:old"}; !reflect.DeepEqual(removed, want) {
+		t.Errorf("removed = %q, want %q", removed, want)
+	}
+	cmds := strings.Join(loggedCommands(t, log), "\n")
+	for _, ref := range []string{img.Tag(), "ghcr.io/registry/tool:" + strings.TrimPrefix(img.Tag(), "tool:"), "tool:new", "ghcr.io/registry/tool:new"} {
+		if strings.Contains(cmds, "image rm "+ref) {
+			t.Errorf("kept %s removed: %q", ref, cmds)
+		}
 	}
 }
 

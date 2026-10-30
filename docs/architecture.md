@@ -209,7 +209,8 @@ services for deployment sites, PHPStan, and patch checking.
   failure exit with code 1, without an extra error line. `--php-version`
   writes PHPStan's `phpVersion` instead of rebuilding the image for another
   PHP. After a pull or build, `dockerimg.Ensure` keeps the two most recent
-  tags of the image and removes older tags not used by a container.
+  versions of the image (including the current one; registry aliases count as
+  one version) and removes older tags not used by a container.
 - `test` runs against the downloaded DLE trial, always the current release,
   with a fresh MariaDB database per run. Pest runs in Docker with `/dle` as
   the project root, so snapshots use Pest's standard layout

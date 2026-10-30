@@ -191,6 +191,15 @@ func TestCleanReportsErrors(t *testing.T) {
 	if !strings.Contains(e.ErrB.String(), "read ") {
 		t.Errorf("err = %q", e.ErrB)
 	}
+
+	e.Out.Reset()
+	e.ErrB.Reset()
+	if code := e.Run("cache", "clean", "--dry-run"); code != 1 {
+		t.Fatalf("dry run exit %d: %s", code, e.ErrB)
+	}
+	if !strings.Contains(e.Out.String(), "Nothing would be removed.") || strings.Contains(e.Out.String(), "Nothing was removed.") {
+		t.Errorf("dry run out = %q", e.Out)
+	}
 	e.NoConfig(t)
 }
 

@@ -13,7 +13,8 @@ import (
 	"github.com/thecoooler/dleplugin/internal/process"
 )
 
-// KeepTags is the number of most recent tags Prune keeps per image.
+// KeepTags is the number of most recent image versions Prune keeps per
+// image, including the current version. Registry aliases count as one version.
 const KeepTags = 2
 
 // TagPrefix is the repository prefix of the tool images.
@@ -117,8 +118,9 @@ func RemoveTag(ctx context.Context, runner *process.Runner, ref string) error {
 }
 
 // Prune removes the older local tags of img, keeping the keep most recent
-// tags and the current tag. Images used by a container are left in place.
-// Failures are joined; callers should treat them as best effort.
+// image versions (always including the current one) and every local tag or
+// registry alias of a kept version. Images used by a container are left in
+// place. Failures are joined; callers should treat them as best effort.
 func Prune(ctx context.Context, runner *process.Runner, img Image, keep int, notify func(string)) ([]string, error) {
 	if keep < 1 {
 		keep = 1
@@ -135,9 +137,46 @@ func Prune(ctx context.Context, runner *process.Runner, img Image, keep int, not
 			mine = append(mine, t)
 		}
 	}
-	kept := map[string]bool{img.Tag(): true}
-	for i := 0; i < len(mine) && i < keep; i++ {
-		kept[mine[i].Reference] = true
+	// Group local tags and their registry aliases by image ID: a version is
+	// kept or removed as a whole, and aliases do not consume retention slots.
+	type version struct {
+		refs    []string
+		current bool
+	}
+	var versions []*version
+	byID := map[string]*version{}
+	current := img.Tag()
+	for _, t := range mine {
+		v, ok := byID[t.ID]
+		if !ok {
+			v = &version{}
+			byID[t.ID] = v
+			versions = append(versions, v)
+		}
+		v.refs = append(v.refs, t.Reference)
+		if t.Reference == current {
+			v.current = true
+		}
+	}
+	kept := map[string]bool{current: true}
+	keptVersions := 0
+	for _, v := range versions {
+		if !v.current {
+			continue
+		}
+		for _, ref := range v.refs {
+			kept[ref] = true
+		}
+		keptVersions++
+	}
+	for _, v := range versions {
+		if v.current || keptVersions >= keep {
+			continue
+		}
+		for _, ref := range v.refs {
+			kept[ref] = true
+		}
+		keptVersions++
 	}
 	var removed []string
 	var errs []error

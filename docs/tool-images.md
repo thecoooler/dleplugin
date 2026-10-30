@@ -4,11 +4,12 @@ The static and test images embed their Dockerfile, `composer.json` and
 `composer.lock`. PHP, Composer and MariaDB images are pinned by digest, PCOV
 by release, and Composer installs the complete locked dependency graph.
 Every embedded build-context input contributes to the image tag, so new
-versions build a new image. After a pull or build, the two most recent tags of
-the image repository are kept and older tags not used by a container are
-removed. A pulled image is tagged locally and its registry reference is removed
-again, so pruning the local tag also releases the layers. `dleplugin cache
-clean --docker` removes unused content-addressed tool images across both
+versions build a new image. After a pull or build, the two most recent versions
+of the image repository (including the current one; registry aliases count as
+one version) are kept and older tags not used by a container are removed. A
+pulled image is tagged locally and its registry reference is removed again, so
+pruning the local tag also releases the layers. `dleplugin cache clean
+--docker` removes unused content-addressed tool images across both
 repositories.
 
 To update Composer tools, run `composer update` in the corresponding asset
